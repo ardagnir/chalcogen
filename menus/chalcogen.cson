@@ -1,0 +1,16 @@
+# See https://atom.io/docs/latest/creating-a-package#menus for more details
+'context-menu':
+  '.overlayer':
+      'Enable chalcogen': 'chalcogen:toggle'
+
+'menu': [
+  {
+    'label': 'Packages'
+    'submenu': [
+      'label': 'chalcogen'
+      'submenu': [
+        { 'label': 'Toggle', 'command': 'chalcogen:toggle' }
+      ]
+    ]
+  }
+]

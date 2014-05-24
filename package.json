@@ -1,0 +1,14 @@
+{
+  "name": "chalcogen",
+  "main": "./lib/chalcogen",
+  "version": "0.0.1",
+  "description": "Full vim integration in atom.",
+  "activationEvents": ["chalcogen:toggle"],
+  "repository": "https://github.com/atom/chalcogen",
+  "license": "AGPLv3",
+  "engines": {
+    "atom": ">0.50.0"
+  },
+  "dependencies": {
+  }
+}
