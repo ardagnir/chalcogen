@@ -51,15 +51,15 @@ module.exports =
     if data
       lines=data.split("\n")
       if lines.length>2
-        start=lines[1].split(",")
-        end=lines[2].split(",")
-        savedEndPosition = [end[2]-1,end[1]-1]
-        if start==end
-          editor.setCursorBufferPosition([start[2]-1, start[1]-1])
+        start=(parseInt(num) for num in lines[1].split(","))
+        end=(parseInt(num) for num in lines[2].split(","))
+        savedEndPosition = [end[2],end[1]]
+        if lines[1]==lines[2]
+          editor.setCursorBufferPosition([start[2], start[1]])
           savedMeta=data
         else if end.length>2
-          editor.setSelectedBufferRange([[start[2]-1, start[1]-1],
-                                         [end[2]-1, end[1]-1]])
+          editor.setSelectedBufferRange([[start[2], start[1]],
+                                         [end[2], end[1]]])
           savedMeta=data
 
 
@@ -73,6 +73,8 @@ module.exports =
       shadowvim.on 'shadowvim:contentsChanged', (data) => @setContents(editor, data)
       shadowvim.on 'shadowvim:metaChanged', (data) => @metaChanged(editor, data)
       shadowvim.on 'shadowvim:messagesReceived', (data) => @messageReceived(editor, data)
+      shadowvim.on 'shadowvim:exited', =>
+        shadowvim.terminate()
       editor.shadowvim = shadowvim
       currentShadows.push(shadowvim)
 
@@ -89,7 +91,6 @@ module.exports =
           index = currentShadows.indexOf(shadow)
           if index != -1
             currentShadows.splice(index, 1)
-          shadow.terminate()
 
       #If we die, our parent will lose a child. (There's probably a better way of doing this)
       reaper.observe editorView.parent()[0],
@@ -138,4 +139,5 @@ module.exports =
     for editor in atom.workspace.getEditors()
       editor.shadowvim.send
         exit: true
-      editor.shadowvim.terminate()
+      #TODO: We can't call terminate here, but we still need to terminate
+      #editor.shadowvim.terminate()

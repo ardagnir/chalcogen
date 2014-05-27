@@ -29,14 +29,11 @@ shadowvim = (sname, startText, cursorPos) =>
   needToRead=false
   svProcess = require("child_process").spawn("vim", [
     "--servername", servername
-    "+call SetupPterosaur()"
+    "+call Shadowvim_SetupShadowvim()"
   ], {
     env: env
   })
 
-  #Get things started
-  svProcess.stdin.write ' '
-    
   #We know vim is loaded when we get stdout
   svProcess.stdout.on 'data', (data) =>
     if needToRead
@@ -66,27 +63,29 @@ shadowvim = (sname, startText, cursorPos) =>
 focusTextbox = (cursorPos) =>
   require("child_process").spawn "vim", [
     "--servername", servername
-    "--remote-expr", "FocusTextbox(#{cursorPos["row"]+1},#{cursorPos["column"]+1},#{cursorPos["row"]+1},#{cursorPos["column"]+1})"
+    "--remote-expr", "Shadowvim_FocusTextbox(#{cursorPos["row"]+1},#{cursorPos["column"]+1},#{cursorPos["row"]+1},#{cursorPos["column"]+1})"
   ]
 
 contentsChanged = =>
-  contents = fs.readFileSync "/tmp/shadowvim/#{servername}/contents.txt"
-
-  emit "shadowvim:contentsChanged", contents.toString().slice(0,-1)
+  try
+    contents = fs.readFileSync "/tmp/shadowvim/#{servername}/contents.txt"
+    emit "shadowvim:contentsChanged", contents.toString().slice(0,-1)
 
 metaChanged = =>
-  meta = fs.readFileSync "/tmp/shadowvim/#{servername}/meta.txt"
-  emit "shadowvim:metaChanged", meta.toString()
+  try
+    meta = fs.readFileSync "/tmp/shadowvim/#{servername}/meta.txt"
+    emit "shadowvim:metaChanged", meta.toString()
 
 messageSent = =>
-  #TODO: Race condition
-  messages = fs.readFileSync("/tmp/shadowvim/#{servername}/messages.txt").toString()
-  if messages
-    fs.writeFileSync "/tmp/shadowvim/#{servername}/messages.txt", ""
-    emit "shadowvim:messagesReceived", messages
-    for message in messages.split("\n")
-      if message
-        console.log "message: " + message
+  try
+    #TODO: Race condition
+    messages = fs.readFileSync("/tmp/shadowvim/#{servername}/messages.txt").toString()
+    if messages
+      fs.writeFileSync "/tmp/shadowvim/#{servername}/messages.txt", ""
+      emit "shadowvim:messagesReceived", messages
+      for message in messages.split("\n")
+        if message
+          console.log "message: " + message
 
 handleMessage = (message) =>
   if message?["send"]
@@ -95,8 +94,13 @@ handleMessage = (message) =>
     focusTextbox(message["focus"])
   if message?["exit"]
     #TODO: Empty the directory first or we can't delete it.
+    fs.unlinkSync("/tmp/shadowvim/#{servername}/contents.txt")
+    fs.unlinkSync("/tmp/shadowvim/#{servername}/meta.txt")
+    fs.unlinkSync("/tmp/shadowvim/#{servername}/messages.txt")
     fs.rmdirSync("/tmp/shadowvim/#{servername}")
-    svProcess.kill()
+    svProcess.kill('SIGKILL')
+    emit "shadowvim:exited"
+
 
 process.on "message", handleMessage
 
