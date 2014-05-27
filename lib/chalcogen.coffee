@@ -24,8 +24,6 @@ cleared = 0
 savedMeta =""
 savedEndPosition= []
 
-#Atom moves the cursor to the end of the text diff. This is a hack to stop that from breaking things.
-atomCursorHack = 0
 
 #TODO: These should not all be exports. This code needs to be cleaned up.
 module.exports =
@@ -37,7 +35,6 @@ module.exports =
   setContents: (editor,data) =>
     if data
       cleared=0
-      atomCursorHack=1
       #TODO: use a better custom diff function
       editor.buffer.setTextViaDiff(data)
     else
@@ -114,11 +111,8 @@ module.exports =
         cursorPos = editor.getCursorBufferPosition()
         if savedEndPosition
             if cursorPos["column"]!=savedEndPosition[1] or cursorPos['row']!=savedEndPosition[0]
-                if not atomCursorHack
-                    shadowvim.send
+              shadowvim.send
                         focus: editor.getCursorBufferPosition()
-            else
-                atomCursorHack=0
 
   translateCode: (code, shift) ->
     if code>=8 && code<=10 || code==13 || code==27
