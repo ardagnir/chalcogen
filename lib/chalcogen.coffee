@@ -15,9 +15,10 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-{Task} = require 'atom'
+#{Task} = require 'atom'
 fs = require("fs")
 VimStatusView = require('./vim-status-view.coffee')
+Shadowvim = require('./shadowvim')
 
 
 currentShadows =[]
@@ -71,13 +72,10 @@ module.exports =
     atom.workspaceView.eachEditorView (editorView) =>
       uid = Math.floor(Math.random()*0x100000000).toString(16)
       editor = editorView.getEditor()
-      shadowvim = new Task(require.resolve('./shadowvim'))
-      shadowvim.start('chalcogen_'+uid, editor.getText(), editor.getCursorBufferPosition())
-      shadowvim.on 'shadowvim:contentsChanged', (data) => @setContents(editor, data)
-      shadowvim.on 'shadowvim:metaChanged', (data) => @metaChanged(editor, data)
-      shadowvim.on 'shadowvim:messagesReceived', (data) => @messageReceived(editor, data)
-      shadowvim.on 'shadowvim:exited', =>
-        shadowvim.terminate()
+      shadowvim = new Shadowvim 'chalcogen_'+uid, editor.getText(), editor.getCursorBufferPosition(),
+        contentsChanged: (data) => @setContents(editor, data)
+        metaChanged: (data) => @metaChanged(editor, data)
+        messageReceived: (data) => @messageReceived(editor, data)
       editor.shadowvim = shadowvim
       currentShadows.push(shadowvim)
 
@@ -89,8 +87,7 @@ module.exports =
             unusedShadows.splice(index, 1)
 
         for shadow in unusedShadows
-          shadow.send
-              exit: true
+          shadow.exit()
           index = currentShadows.indexOf(shadow)
           if index != -1
             currentShadows.splice(index, 1)
@@ -103,22 +100,19 @@ module.exports =
         if savedMeta
           @metaChanged(editor, savedMeta)
       editorView.keypress (e) =>
-        shadowvim.send
-            send: String.fromCharCode(e.which)
+        shadowvim.send String.fromCharCode(e.which)
         false
       editorView.keydown (e) =>
         translation=@translateCode(e.which, e.shiftKey)
         if translation != ""
-          shadowvim.send
-            send: translation
+          shadowvim.send translation
           false
 
       editorView.on 'cursor:moved', =>
         cursorPos = editor.getCursorBufferPosition()
         if savedEndPosition
             if cursorPos["column"]!=savedEndPosition[1] or cursorPos['row']!=savedEndPosition[0]
-              shadowvim.send
-                        focus: editor.getCursorBufferPosition()
+              shadowvim.focusTextbox editor.getCursorBufferPosition()
 
   translateCode: (code, shift) ->
     if code>=8 && code<=10 || code==13 || code==27
@@ -137,7 +131,4 @@ module.exports =
 
   deactivate: ->
     for editor in atom.workspace.getEditors()
-      editor.shadowvim.send
-        exit: true
-      #TODO: We can't call terminate here, but we still need to terminate
-      #editor.shadowvim.terminate()
+      editor.shadowvim.exit()
