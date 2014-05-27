@@ -17,12 +17,14 @@
 
 {Task} = require 'atom'
 fs = require("fs")
+VimStatusView = require('./vim-status-view.coffee')
 
 
 currentShadows =[]
 cleared = 0
 savedMeta =""
 savedEndPosition= []
+statusView = undefined
 
 
 #TODO: These should not all be exports. This code needs to be cleaned up.
@@ -48,6 +50,8 @@ module.exports =
     if data
       lines=data.split("\n")
       if lines.length>2
+        mode=lines[0]
+        statusView.setStatus(mode)
         start=(parseInt(num) for num in lines[1].split(","))
         end=(parseInt(num) for num in lines[2].split(","))
         savedEndPosition = [end[2],end[1]]
@@ -62,6 +66,8 @@ module.exports =
 
 
   fullvim: ->
+    statusView = new VimStatusView
+    atom.workspaceView.statusBar.prependLeft(statusView)
     atom.workspaceView.eachEditorView (editorView) =>
       uid = Math.floor(Math.random()*0x100000000).toString(16)
       editor = editorView.getEditor()
