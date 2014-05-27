@@ -98,7 +98,7 @@ module.exports =
 
       editor.buffer.on 'changed', =>
         if savedMeta
-          @metaChanged(savedMeta)
+          @metaChanged(editor, savedMeta)
       editorView.keypress (e) =>
         shadowvim.send
             send: String.fromCharCode(e.which)
