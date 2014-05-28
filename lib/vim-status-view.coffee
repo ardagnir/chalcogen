@@ -5,8 +5,13 @@ class VimStatusView extends View
   @content: ->
     @span ""
         
-  setStatus: (status) ->
-    @html @getStatusHtml(status)+" "
+  setStatus: (status, arg) ->
+    @html @getStatusHtml(status,arg)+" "
+    @find('.commandText').text arg
+
+  setText: (text) ->
+    @html "<span class='commandText' /><br/>"
+    @find('.commandText').text text
 
   getStatusHtml: (status)->
     switch status
@@ -30,3 +35,5 @@ class VimStatusView extends View
           "<b>-- VREPLACE --</b>"
       when "Rv"
           "<b>-- VREPLACE --</b>"
+      when "c"
+          "<span class='commandText' /><br/>"

@@ -115,13 +115,16 @@ class Chalcogen
   messageReceived: (editor, data) =>
     if @cleared
       editor.setText("")
+    @statusView.setText data
+    @mode=''
 
   metaChanged: (editor, data) ->
     if data
       lines=data.split("\n")
       if lines.length>2
-        mode=lines[0]
-        @statusView.setStatus(mode)
+        if @mode!=lines[0] || @mode=='c'
+          @mode=lines[0]
+          @statusView.setStatus(@mode,lines[1])
         start=(parseInt(num) for num in lines[1].split(","))
         end=(parseInt(num) for num in lines[2].split(","))
         @savedEndPostion = [end[2],end[1]]
