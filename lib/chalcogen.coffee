@@ -15,36 +15,95 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#{Task} = require 'atom'
 fs = require("fs")
 VimStatusView = require('./vim-status-view.coffee')
 Shadowvim = require('./shadowvim')
 
-
-currentShadows =[]
-cleared = 0
-savedMeta =""
-savedEndPosition= []
-statusView = undefined
-
-
-#TODO: These should not all be exports. This code needs to be cleaned up.
 module.exports =
-
   activate: (state) ->
-    #TODO: add a way to disable fullvim
-    atom.workspaceView.command "chalcogen:toggle", => @fullvim()
+    atom.workspaceView.command "chalcogen:toggle", =>
+      if @chalcogen
+        @chalcogen.cleanup()
+        @chalcogen = 0
+      else
+        @chalcogen = new Chalcogen
+
+  deactivate: ->
+    @chalcogen?.cleanup()
+
+class Chalcogen
+  constructor: ->
+    @statusView = new VimStatusView
+    @shadows = []
+    atom.workspaceView.statusBar.prependLeft(@statusView)
+    atom.workspaceView.eachEditorView @setupEditorView
+
+  cleanup: ->
+    for editorView in atom.workspaceView.getEditorViews()
+      editorView.editor.shadowvim.exit()
+      editorView.editor.buffer.off 'changed.shadowvim'
+      editorView.off "keypress.shadowvim"
+      editorView.off "keydown.shadowvim"
+      editorView.off "cursor:moved.shadowvim"
+
+  setupEditorView: (editorView) =>
+    uid = Math.floor(Math.random()*0x100000000).toString(16)
+    editor = editorView.getEditor()
+    shadowvim = new Shadowvim 'chalcogen_'+uid, editor.getText(), editor.getCursorBufferPosition(),
+      contentsChanged: (data) => @setContents(editor, data)
+      metaChanged: (data) => @metaChanged(editor, data)
+      messageReceived: (data) => @messageReceived(editor, data)
+    editor.shadowvim = shadowvim
+    @shadows.push(shadowvim)
+
+    #If we die, our parent will lose a child. (There's probably a better way of doing this)
+    reaper = new MutationObserver @cleanupShadows
+    reaper.observe editorView.parent()[0],
+      childList: true
+
+    editor.buffer.on "changed.shadowvim", =>
+      if @savedMeta
+        @metaChanged(editor, @savedMeta)
+
+    editorView.on "keypress.shadowvim", (e) =>
+      shadowvim.send String.fromCharCode(e.which)
+      false
+
+    editorView.on "keydown.shadowvim", (e) =>
+      translation=@translateCode(e.which, e.shiftKey)
+      if translation != ""
+        shadowvim.send translation
+        false
+
+    editorView.on "cursor:moved.shadowvim", =>
+      cursorPos = editor.getCursorBufferPosition()
+      if @savedEndPostion
+          if cursorPos["column"]!=@savedEndPostion[1] or cursorPos['row']!=@savedEndPostion[0]
+            shadowvim.focusTextbox editor.getCursorBufferPosition()
+
+  cleanupShadows: (mutations) =>
+    unusedShadows = @shadows.slice()
+    for currentEditor in atom.workspace.getEditors()
+      index = unusedShadows.indexOf(currentEditor.shadowvim)
+      if index != -1
+        unusedShadows.splice(index, 1)
+
+    for shadow in unusedShadows
+      shadow.exit()
+      index = @shadows.indexOf(shadow)
+      if index != -1
+        @shadows.splice(index, 1)
 
   setContents: (editor,data) =>
     if data
-      cleared=0
+      @cleared=0
       #TODO: use a better custom diff function
       editor.buffer.setTextViaDiff(data)
     else
-      cleared=1
+      @cleared=1
 
   messageReceived: (editor, data) =>
-    if cleared
+    if @cleared
       editor.setText("")
 
   metaChanged: (editor, data) ->
@@ -52,67 +111,17 @@ module.exports =
       lines=data.split("\n")
       if lines.length>2
         mode=lines[0]
-        statusView.setStatus(mode)
+        @statusView.setStatus(mode)
         start=(parseInt(num) for num in lines[1].split(","))
         end=(parseInt(num) for num in lines[2].split(","))
-        savedEndPosition = [end[2],end[1]]
+        @savedEndPostion = [end[2],end[1]]
         if lines[1]==lines[2]
           editor.setCursorBufferPosition([start[2], start[1]])
-          savedMeta=data
+          @savedMeta=data
         else if end.length>2
           editor.setSelectedBufferRange([[start[2], start[1]],
                                          [end[2], end[1]]])
-          savedMeta=data
-
-
-
-  fullvim: ->
-    statusView = new VimStatusView
-    atom.workspaceView.statusBar.prependLeft(statusView)
-    atom.workspaceView.eachEditorView (editorView) =>
-      uid = Math.floor(Math.random()*0x100000000).toString(16)
-      editor = editorView.getEditor()
-      shadowvim = new Shadowvim 'chalcogen_'+uid, editor.getText(), editor.getCursorBufferPosition(),
-        contentsChanged: (data) => @setContents(editor, data)
-        metaChanged: (data) => @metaChanged(editor, data)
-        messageReceived: (data) => @messageReceived(editor, data)
-      editor.shadowvim = shadowvim
-      currentShadows.push(shadowvim)
-
-      reaper = new MutationObserver (mutations) =>
-        unusedShadows = currentShadows.slice()
-        for currentEditor in atom.workspace.getEditors()
-          index = unusedShadows.indexOf(currentEditor.shadowvim)
-          if index != -1
-            unusedShadows.splice(index, 1)
-
-        for shadow in unusedShadows
-          shadow.exit()
-          index = currentShadows.indexOf(shadow)
-          if index != -1
-            currentShadows.splice(index, 1)
-
-      #If we die, our parent will lose a child. (There's probably a better way of doing this)
-      reaper.observe editorView.parent()[0],
-        childList: true
-
-      editor.buffer.on 'changed', =>
-        if savedMeta
-          @metaChanged(editor, savedMeta)
-      editorView.keypress (e) =>
-        shadowvim.send String.fromCharCode(e.which)
-        false
-      editorView.keydown (e) =>
-        translation=@translateCode(e.which, e.shiftKey)
-        if translation != ""
-          shadowvim.send translation
-          false
-
-      editorView.on 'cursor:moved', =>
-        cursorPos = editor.getCursorBufferPosition()
-        if savedEndPosition
-            if cursorPos["column"]!=savedEndPosition[1] or cursorPos['row']!=savedEndPosition[0]
-              shadowvim.focusTextbox editor.getCursorBufferPosition()
+          @savedMeta=data
 
   translateCode: (code, shift) ->
     if code>=8 && code<=10 || code==13 || code==27
@@ -128,7 +137,3 @@ module.exports =
     else
       ""
 
-
-  deactivate: ->
-    for editor in atom.workspace.getEditors()
-      editor.shadowvim.exit()
