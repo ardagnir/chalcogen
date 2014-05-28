@@ -49,7 +49,7 @@ class Chalcogen
   setupEditorView: (editorView) =>
     uid = Math.floor(Math.random()*0x100000000).toString(16)
     editor = editorView.getEditor()
-    shadowvim = new Shadowvim 'chalcogen_'+uid, editor.getText(), editor.getCursorBufferPosition(),
+    shadowvim = new Shadowvim 'chalcogen_'+uid, editor.getText(), editor.getSelectedBufferRange(),
       contentsChanged: (data) => @setContents(editor, data)
       metaChanged: (data) => @metaChanged(editor, data)
       messageReceived: (data) => @messageReceived(editor, data)
@@ -86,9 +86,9 @@ class Chalcogen
 
     editorView.on "cursor:moved.shadowvim", =>
       cursorPos = editor.getCursorBufferPosition()
-      if @savedEndPostion
-          if cursorPos["column"]!=@savedEndPostion[1] or cursorPos['row']!=@savedEndPostion[0]
-            shadowvim.focusTextbox editor.getCursorBufferPosition()
+      if @savedEndPosition
+          if cursorPos["column"]!=@savedEndPosition[1] or cursorPos['row']!=@savedEndPosition[0]
+            shadowvim.focusTextbox editor.getSelectedBufferRange()
 
   cleanupShadows: (mutations) =>
     unusedShadows = @shadows.slice()
@@ -110,15 +110,21 @@ class Chalcogen
       editor.buffer.setTextViaDiff(data)
       @internalTextChange=0
     else
+      #The file is emptied before it is changed and we have to make sure it is actually empty.
       @cleared=1
+      setTimeout( =>
+        @internalTextChange=1
+        #TODO: Race condition.
+        if @cleared and @savedEndPosition[0]==0 and @savedEndPosition[1]==0
+          editor.setText("")
+        @internalTextChange=0
+      ,100)
 
   messageReceived: (editor, data) =>
-    if @cleared
-      editor.setText("")
     @statusView.setText data
     @mode=''
 
-  metaChanged: (editor, data) ->
+  metaChanged: (editor, data) =>
     if data
       lines=data.split("\n")
       if lines.length>2
@@ -127,7 +133,7 @@ class Chalcogen
           @statusView.setStatus(@mode,lines[1])
         start=(parseInt(num) for num in lines[1].split(","))
         end=(parseInt(num) for num in lines[2].split(","))
-        @savedEndPostion = [end[2],end[1]]
+        @savedEndPosition = [end[2],end[1]]
         if lines[1]==lines[2]
           editor.setCursorBufferPosition([start[2], start[1]])
           @savedMeta=data

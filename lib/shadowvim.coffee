@@ -19,9 +19,7 @@ fs = require("fs")
 
 module.exports =
 class Shadowvim
-  constructor: (@servername, startText, cursorPos, @callbackFunctions) ->
-    #TODO: Something's off by one. This is a hack
-    cursorPos["column"] = cursorPos["column"]-1
+  constructor: (@servername, startText, cursorSelection, @callbackFunctions) ->
     env = process.env
     env["TERM"] = "xterm"
     needToRead=false
@@ -35,7 +33,7 @@ class Shadowvim
     #We know vim is loaded when we get stdout
     @svProcess.stdout.on 'data', (data) =>
       if needToRead
-        @focusTextbox(cursorPos)
+        @focusTextbox(cursorSelection)
         needToRead = false
 
     @svProcess.stderr.on 'data', (data) =>
@@ -70,10 +68,11 @@ class Shadowvim
       "--remote-expr", "Shadowvim_UpdateTextbox(#{cursorPos["row"]+1},#{cursorPos["column"]+1},#{cursorPos["row"]+1},#{cursorPos["column"]+1})"
     ]
 
-  focusTextbox: (cursorPos) =>
+  focusTextbox: (selection) =>
+    @textSent = 0
     require("child_process").spawn "vim", [
       "--servername", @servername
-      "--remote-expr", "Shadowvim_FocusTextbox(#{cursorPos["row"]+1},#{cursorPos["column"]+1},#{cursorPos["row"]+1},#{cursorPos["column"]+1})"
+      "--remote-expr", "Shadowvim_FocusTextbox(#{selection.start.row+1},#{selection.start.column+1},#{selection.end.row+1},#{selection.end.column+1})"
     ]
 
   contentsChanged: =>
@@ -95,7 +94,9 @@ class Shadowvim
       if e.code != 'ENOENT'
         throw e
       return
-    @callbackFunctions.metaChanged? meta.toString()
+    #Ignore changes that are caused by us setting up vim
+    if @textSent
+      @callbackFunctions.metaChanged? meta.toString()
 
   messageReceived: =>
     try
@@ -108,12 +109,13 @@ class Shadowvim
       return
     if messages
       fs.writeFileSync "/tmp/shadowvim/#{@servername}/messages.txt", ""
-      @callbackFunctions.messageReceived? messages
+      @callbackFunctions.messageReceived? messages.replace(/.*\n/, '')
       for message in messages.split("\n")
         if message
           console.log "message: " + message
 
   send: (message) =>
+    @textSent = 1
     @svProcess.stdin.write message
 
   exit: =>
