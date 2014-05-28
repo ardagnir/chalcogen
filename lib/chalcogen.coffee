@@ -62,18 +62,27 @@ class Chalcogen
       childList: true
 
     editor.buffer.on "changed.shadowvim", =>
-      if @savedMeta
-        @metaChanged(editor, @savedMeta)
+      if @internalTextChange
+        if @savedMeta
+          @metaChanged(editor, @savedMeta)
+      else
+        shadowvim.changeContents(editor.getText(), editor.getCursorBufferPosition())
 
-    editorView.on "keypress.shadowvim", (e) =>
-      shadowvim.send String.fromCharCode(e.which)
-      false
+    editorView.on "keypress.shadowvim", (e) ->
+      if editorView.hasClass('is-focused')
+        shadowvim.send String.fromCharCode(e.which)
+        false
+      else
+        true
 
     editorView.on "keydown.shadowvim", (e) =>
-      translation=@translateCode(e.which, e.shiftKey)
-      if translation != ""
-        shadowvim.send translation
-        false
+      if editorView.hasClass('is-focused')
+        translation=@translateCode(e.which, e.shiftKey)
+        if translation != ""
+          shadowvim.send translation
+          false
+      else
+        true
 
     editorView.on "cursor:moved.shadowvim", =>
       cursorPos = editor.getCursorBufferPosition()
@@ -97,8 +106,9 @@ class Chalcogen
   setContents: (editor,data) =>
     if data
       @cleared=0
-      #TODO: use a better custom diff function
+      @internalTextChange=1
       editor.buffer.setTextViaDiff(data)
+      @internalTextChange=0
     else
       @cleared=1
 

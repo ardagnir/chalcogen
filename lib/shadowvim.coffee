@@ -54,6 +54,7 @@ class Shadowvim
     fs.open "/tmp/shadowvim/#{@servername}/contents.txt", "w", readWritePerm, (e, id) =>
       fs.writeSync id, startText, 0, startText.length, 0
       needToRead=true
+      @contentsFile = id
       fs.watch "/tmp/shadowvim/#{@servername}/contents.txt", @contentsChanged
     fs.open "/tmp/shadowvim/#{@servername}/meta.txt", "w", readWritePerm, =>
       fs.watch "/tmp/shadowvim/#{@servername}/meta.txt", @metaChanged
@@ -61,6 +62,13 @@ class Shadowvim
       fs.watch "/tmp/shadowvim/#{@servername}/messages.txt", @messageReceived
 
     return
+
+  changeContents: (newText, cursorPos) =>
+    fs.writeSync @contentsFile, newText, 0, newText.length, 0
+    require("child_process").spawn "vim", [
+      "--servername", @servername
+      "--remote-expr", "Shadowvim_UpdateTextbox(#{cursorPos["row"]+1},#{cursorPos["column"]+1},#{cursorPos["row"]+1},#{cursorPos["column"]+1})"
+    ]
 
   focusTextbox: (cursorPos) =>
     require("child_process").spawn "vim", [
