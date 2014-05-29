@@ -19,13 +19,13 @@ fs = require("fs")
 
 module.exports =
 class Shadowvim
-  constructor: (@servername, startText, cursorSelection, @callbackFunctions) ->
+  constructor: (@servername, path, startText, cursorSelection, @callbackFunctions) ->
     env = process.env
     env["TERM"] = "xterm"
     needToRead=false
     @svProcess = require("child_process").spawn("vim", [
       "--servername", @servername
-      "+call Shadowvim_SetupShadowvim()"
+      "+call Shadowvim_SetupShadowvim('#{path || ""}')"
     ], {
       env: env
     })

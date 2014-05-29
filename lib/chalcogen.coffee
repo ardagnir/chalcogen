@@ -49,7 +49,10 @@ class Chalcogen
   setupEditorView: (editorView) =>
     uid = Math.floor(Math.random()*0x100000000).toString(16)
     editor = editorView.getEditor()
-    shadowvim = new Shadowvim 'chalcogen_'+uid, editor.getText(), editor.getSelectedBufferRange(),
+    #TODO: Need to restore this
+    editorView.showBufferConflictAlert = ->
+
+    shadowvim = new Shadowvim 'chalcogen_'+uid, editor.getUri(), editor.getText(), editor.getSelectedBufferRange(),
       contentsChanged: (data) => @setContents(editor, data)
       metaChanged: (data) => @metaChanged(editor, data)
       messageReceived: (data) => @messageReceived(editor, data)
