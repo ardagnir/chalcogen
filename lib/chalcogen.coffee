@@ -53,7 +53,7 @@ class Chalcogen
     #TODO: Need to restore this
     editorView.showBufferConflictAlert = ->
 
-    shadowvim = new Shadowvim 'chalcogen_'+uid, editor.getUri(), editor.getText(), editor.getSelectedBufferRange(),
+    shadowvim = new Shadowvim 'chalcogen_'+uid, editor.getUri(),(=> editor.getText()), (=> editor.getSelectedBufferRange()),
       contentsChanged: (data) => @setContents(editor, data)
       metaChanged: (data) => @metaChanged(editor, data)
       messageReceived: (data) => @messageReceived(editor, data)
@@ -99,7 +99,7 @@ class Chalcogen
       cursorRange = editor.getSelectedBufferRange()
       if @savedRange
           console.log(cursorRange.start+"->"+cursorRange.end)
-          if not cursorRange.isEqual(@savedRange)
+          if not @waitingForContents and not cursorRange.isEqual(@savedRange)
             console.log("not equal")
             shadowvim.updateShadowvim( ->
               editor.getText()
@@ -122,7 +122,7 @@ class Chalcogen
 
   setContents: (editor,data) =>
     if data
-      @cleared=0
+      @waitingForContents=0
       @internalTextChange=1
       editor.buffer.setTextViaDiff(data)
       @internalTextChange=0
@@ -135,7 +135,6 @@ class Chalcogen
     @mode=''
 
   metaChanged: (editor, data) =>
-    console.log('metachanged')
     if data
       lines=data.split("\n")
       if lines.length>2
@@ -151,7 +150,10 @@ class Chalcogen
         else if end.length>2
           editor.setSelectedBufferRange([[start[2], start[1]],
                                          [end[2], end[1]]])
-          @savedMeta=data
+        if @savedRange!=editor.getSelectedBufferRange()
+          #We haven't got the text we want to put this cursor on yet
+          @waitingForContents=1
+        @savedMeta=data
 
   translateCode: (code, shift) ->
     if code>=8 && code<=10 || code==13 || code==27

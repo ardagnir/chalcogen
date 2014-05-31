@@ -19,7 +19,7 @@ fs = require("fs")
 
 module.exports =
 class Shadowvim
-  constructor: (@servername, path, startText, cursorSelection, @callbackFunctions) ->
+  constructor: (@servername, path, textFunc, cursorFunc, @callbackFunctions) ->
     env = process.env
     env["TERM"] = "xterm"
     needToRead=false
@@ -33,7 +33,7 @@ class Shadowvim
     #We know vim is loaded when we get stdout
     @svProcess.stdout.on 'data', (data) =>
       if needToRead
-        @moveCursor(cursorSelection)
+        @updateShadowvim(textFunc, cursorFunc)
         needToRead = false
 
     @svProcess.stderr.on 'data', (data) =>
@@ -50,9 +50,8 @@ class Shadowvim
       fs.mkdirSync "/tmp/shadowvim/" + @servername, execPerm
 
     fs.open "/tmp/shadowvim/#{@servername}/contents.txt", "w", readWritePerm, (e, id) =>
-      fs.writeSync id, startText, 0, startText.length, 0
-      needToRead=true
       @contentsFile = id
+      needToRead=true
       fs.watch "/tmp/shadowvim/#{@servername}/contents.txt", @contentsChanged
     fs.open "/tmp/shadowvim/#{@servername}/meta.txt", "w", readWritePerm, =>
       fs.watch "/tmp/shadowvim/#{@servername}/meta.txt", @metaChanged
@@ -63,7 +62,7 @@ class Shadowvim
 
   updateShadowvim: (textFunc, cursorFunc)=>
     @textSent = 0
-    if @exprHot
+    if not @exprHot
       setTimeout(=>
         @updateIfCool(textFunc,cursorFunc)
       , 200)
@@ -79,29 +78,13 @@ class Shadowvim
       fs.writeSync @contentsFile, newText, 0, newText.length, 0
       require("child_process").spawn "vim", [
         "--servername", @servername
-        "--remote-expr", "Shadowvim_UpdateText(#{cursorSelection.start.row+1},#{cursorSelection.start.column+1},#{cursorSelection.end.row+1},#{cursorSelection.end.column+1})"
+        "--remote-expr", "Shadowvim_UpdateText(#{cursorSelection.start.row+1},#{cursorSelection.start.column+1},#{cursorSelection.end.row+1},#{cursorSelection.end.column+1},0)"
       ]
     else
        @exprHot=1
        setTimeout(=>
          @updateIfCool(textFunc,cursorFunc)
        , 200)
-
-  changeContents: (newText, cursorSelection) =>
-    @textSent = 0
-    console.log('newText:'+newText+cursorSelection)
-    fs.writeSync @contentsFile, newText, 0, newText.length, 0
-    require("child_process").spawn "vim", [
-      "--servername", @servername
-      "--remote-expr", "Shadowvim_UpdateText(#{cursorSelection.start.row+1},#{cursorSelection.start.column+1},#{cursorSelection.end.row+1},#{cursorSelection.end.column+1})"
-    ]
-
-  moveCursor: (selection) =>
-    @textSent = 0
-    require("child_process").spawn "vim", [
-      "--servername", @servername
-      "--remote-expr", "Shadowvim_UpdateText(#{selection.start.row+1},#{selection.start.column+1},#{selection.end.row+1},#{selection.end.column+1})"
-    ]
 
   contentsChanged: =>
     try
