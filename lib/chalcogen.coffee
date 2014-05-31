@@ -71,7 +71,6 @@ class Chalcogen
           @metaChanged(editor, @savedMeta)
       else
         cursorRange = editor.getSelectedBufferRange()
-        console.log("change:"+cursorRange.start+"->"+cursorRange.end)
         #shadowvim.changeContents(editor.getText(), cursorRange)
         shadowvim.updateShadowvim( ->
           editor.getText()
@@ -98,9 +97,7 @@ class Chalcogen
     editorView.on "cursor:moved.shadowvim", =>
       cursorRange = editor.getSelectedBufferRange()
       if @savedRange
-          console.log(cursorRange.start+"->"+cursorRange.end)
           if not @waitingForContents and not cursorRange.isEqual(@savedRange)
-            console.log("not equal")
             shadowvim.updateShadowvim( ->
               editor.getText()
             , ->
@@ -121,14 +118,10 @@ class Chalcogen
         @shadows.splice(index, 1)
 
   setContents: (editor,data) =>
-    if data
-      @waitingForContents=0
-      @internalTextChange=1
-      editor.buffer.setTextViaDiff(data)
-      @internalTextChange=0
-    else
-      #TODO: allow deletion of files
-      return
+    @waitingForContents=0
+    @internalTextChange=1
+    editor.buffer.setTextViaDiff(data)
+    @internalTextChange=0
 
   messageReceived: (editor, data) =>
     @statusView.setText data

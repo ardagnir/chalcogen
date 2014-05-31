@@ -94,7 +94,7 @@ class Shadowvim
       if e.code != 'ENOENT'
         throw e
       return
-    if @textSent
+    if @textSent and contents.toString()
       @callbackFunctions.contentsChanged? contents.toString().slice(0,-1)
 
 
@@ -121,7 +121,7 @@ class Shadowvim
       return
     if messages
       fs.writeFileSync "/tmp/shadowvim/#{@servername}/messages.txt", ""
-      @callbackFunctions.messageReceived? messages.replace(/.*\n/, '')
+      @callbackFunctions.messageReceived? messages.replace(/(.*\n)*/, '')
       for message in messages.split("\n")
         if message
           console.log "message: " + message
