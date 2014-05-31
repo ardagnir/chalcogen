@@ -33,7 +33,7 @@ class Shadowvim
     #We know vim is loaded when we get stdout
     @svProcess.stdout.on 'data', (data) =>
       if needToRead
-        @focusTextbox(cursorSelection)
+        @moveCursor(cursorSelection)
         needToRead = false
 
     @svProcess.stderr.on 'data', (data) =>
@@ -61,18 +61,46 @@ class Shadowvim
 
     return
 
-  changeContents: (newText, cursorPos) =>
+  updateShadowvim: (textFunc, cursorFunc)=>
+    @textSent = 0
+    if @exprHot
+      setTimeout(=>
+        @updateIfCool(textFunc,cursorFunc)
+      , 200)
+      @exprHot=1
+    else
+      @exprHot=2
+
+  updateIfCool: (textFunc, cursorFunc) =>
+    if @exprHot<2
+      @exprHot=0
+      newText = textFunc()
+      cursorSelection = cursorFunc()
+      fs.writeSync @contentsFile, newText, 0, newText.length, 0
+      require("child_process").spawn "vim", [
+        "--servername", @servername
+        "--remote-expr", "Shadowvim_UpdateText(#{cursorSelection.start.row+1},#{cursorSelection.start.column+1},#{cursorSelection.end.row+1},#{cursorSelection.end.column+1})"
+      ]
+    else
+       @exprHot=1
+       setTimeout(=>
+         @updateIfCool(textFunc,cursorFunc)
+       , 200)
+
+  changeContents: (newText, cursorSelection) =>
+    @textSent = 0
+    console.log('newText:'+newText+cursorSelection)
     fs.writeSync @contentsFile, newText, 0, newText.length, 0
     require("child_process").spawn "vim", [
       "--servername", @servername
-      "--remote-expr", "Shadowvim_UpdateTextbox(#{cursorPos["row"]+1},#{cursorPos["column"]+1},#{cursorPos["row"]+1},#{cursorPos["column"]+1})"
+      "--remote-expr", "Shadowvim_UpdateText(#{cursorSelection.start.row+1},#{cursorSelection.start.column+1},#{cursorSelection.end.row+1},#{cursorSelection.end.column+1})"
     ]
 
-  focusTextbox: (selection) =>
+  moveCursor: (selection) =>
     @textSent = 0
     require("child_process").spawn "vim", [
       "--servername", @servername
-      "--remote-expr", "Shadowvim_FocusTextbox(#{selection.start.row+1},#{selection.start.column+1},#{selection.end.row+1},#{selection.end.column+1})"
+      "--remote-expr", "Shadowvim_UpdateText(#{selection.start.row+1},#{selection.start.column+1},#{selection.end.row+1},#{selection.end.column+1})"
     ]
 
   contentsChanged: =>
@@ -83,7 +111,8 @@ class Shadowvim
       if e.code != 'ENOENT'
         throw e
       return
-    @callbackFunctions.contentsChanged? contents.toString().slice(0,-1)
+    if @textSent
+      @callbackFunctions.contentsChanged? contents.toString().slice(0,-1)
 
 
   metaChanged: =>
@@ -114,9 +143,15 @@ class Shadowvim
         if message
           console.log "message: " + message
 
+  buffer: ""
+
   send: (message) =>
+    @buffer+=message
+    if @exprHot
+      return
     @textSent = 1
-    @svProcess.stdin.write message
+    @svProcess.stdin.write @buffer
+    @buffer = ""
 
   exit: =>
     #TODO: Empty the directory first or we can't delete it.
