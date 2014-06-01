@@ -16,6 +16,7 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 fs = require("fs")
+childProcess = require("child_process")
 
 module.exports =
 class Shadowvim
@@ -23,7 +24,7 @@ class Shadowvim
     env = process.env
     env["TERM"] = "xterm"
     needToRead=false
-    @svProcess = require("child_process").spawn("vim", [
+    @svProcess = childProcess.spawn("vim", [
       "--servername", @servername
       "+call Shadowvim_SetupShadowvim('#{path || ""}')"
     ], {
@@ -62,26 +63,26 @@ class Shadowvim
 
   updateShadowvim: (textFunc, cursorFunc)=>
     @textSent = 0
-    if not @exprHot
+    if not @updateHot
       setTimeout(=>
         @updateIfCool(textFunc,cursorFunc)
       , 200)
-      @exprHot=1
+      @updateHot=1
     else
-      @exprHot=2
+      @updateHot=2
 
   updateIfCool: (textFunc, cursorFunc) =>
-    if @exprHot<2
-      @exprHot=0
+    if @updateHot<2
+      @updateHot=0
       newText = textFunc()
       cursorSelection = cursorFunc()
       fs.writeSync @contentsFile, newText, 0, newText.length, 0
-      require("child_process").spawn "vim", [
+      childProcess.spawn "vim", [
         "--servername", @servername
         "--remote-expr", "Shadowvim_UpdateText(#{cursorSelection.start.row+1},#{cursorSelection.start.column+1},#{cursorSelection.end.row+1},#{cursorSelection.end.column+1},0)"
       ]
     else
-       @exprHot=1
+       @updateHot=1
        setTimeout(=>
          @updateIfCool(textFunc,cursorFunc)
        , 200)
@@ -130,11 +131,23 @@ class Shadowvim
 
   send: (message) =>
     @buffer+=message
-    if @exprHot
+    if @updateHot
       return
     @textSent = 1
     @svProcess.stdin.write @buffer
     @buffer = ""
+    if not @pollHot
+      @pollHot=1
+      setTimeout(=>
+        @pollHot=0
+        @sendPoll()
+      ,200)
+
+  sendPoll: =>
+      childProcess.spawn "vim", [
+        "--servername", @servername
+        "--remote-expr", "Shadowvim_Poll()"
+      ]
 
   exit: =>
     #TODO: Empty the directory first or we can't delete it.
