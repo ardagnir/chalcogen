@@ -20,13 +20,17 @@ childProcess = require("child_process")
 
 module.exports =
 class Shadowvim
+  execPerm: parseInt("700", 8)
+  readWritePerm: parseInt("600", 8)
+  allPerm: parseInt("777", 8)
+
   constructor: (@servername, path, textFunc, cursorFunc, @callbackFunctions) ->
     env = process.env
     env["TERM"] = "xterm"
     needToRead=false
     @svProcess = childProcess.spawn("vim", [
       "--servername", @servername
-      "+call Shadowvim_SetupShadowvim('#{path || ""}')"
+      "+call Shadowvim_SetupShadowvim('#{path || ""}','tabs')"
     ], {
       env: env
     })
@@ -40,26 +44,104 @@ class Shadowvim
     @svProcess.stderr.on 'data', (data) =>
       console.log("stderr:"+data)
 
-    execPerm = parseInt("700", 8)
-    readWritePerm = parseInt("600", 8)
-    allPerm = parseInt("777", 8)
 
     #These might already exist
     try
-      fs.mkdirSync "/tmp/shadowvim", allPerm
+      fs.mkdirSync "/tmp/shadowvim", @allPerm
     try
-      fs.mkdirSync "/tmp/shadowvim/" + @servername, execPerm
+      fs.mkdirSync "/tmp/shadowvim/" + @servername, @execPerm
 
-    fs.open "/tmp/shadowvim/#{@servername}/contents.txt", "w", readWritePerm, (e, id) =>
-      @contentsFile = id
-      needToRead=true
-      fs.watch "/tmp/shadowvim/#{@servername}/contents.txt", @contentsChanged
-    fs.open "/tmp/shadowvim/#{@servername}/meta.txt", "w", readWritePerm, =>
+    fs.open "/tmp/shadowvim/#{@servername}/meta.txt", "w", @readWritePerm, =>
       fs.watch "/tmp/shadowvim/#{@servername}/meta.txt", @metaChanged
-    fs.open "/tmp/shadowvim/#{@servername}/messages.txt", "w", readWritePerm, =>
+    fs.open "/tmp/shadowvim/#{@servername}/messages.txt", "w", @readWritePerm, =>
       fs.watch "/tmp/shadowvim/#{@servername}/messages.txt", @messageReceived
+    fs.open "/tmp/shadowvim/#{@servername}/tabs.txt", "w", @readWritePerm, (e, id) =>
+      @tabFile = id
+      fs.watch "/tmp/shadowvim/#{@servername}/tabs.txt", @tabsChanged
 
     return
+
+  tabsChanged: =>
+    try
+      tabs = fs.readFileSync("/tmp/shadowvim/#{@servername}/tabs.txt").toString().split("\n")
+    catch e
+      #This function is triggered at file deletion
+      if e.code != 'ENOENT'
+        throw e
+      return
+    console.log(tabs)
+
+    if tabs.length
+      if @contentsFile
+        fs.close @contentsFile
+        @contentsFile = null
+        fs.unlink("/tmp/shadowvim/#{@servername}/contents-#{@currentBuffer}.txt")
+
+      currentInfo = tabs[0].split(" ")
+      @currentBuffer = currentInfo[0]
+      currentTab = parseInt(currentInfo[1])
+      
+      fs.open "/tmp/shadowvim/#{@servername}/contents-#{@currentBuffer}.txt", "w", @readWritePerm, (e, id) =>
+        @contentsFile = id
+        #needToRead=true
+        fs.watch "/tmp/shadowvim/#{@servername}/contents-#{@currentBuffer}.txt", @contentsChanged
+      @callbackFunctions.tabsChanged? tabs, currentTab
+
+  contentsChanged: =>
+    try
+      contents = fs.readFileSync "/tmp/shadowvim/#{@servername}/contents-#{@currentBuffer}.txt"
+    catch e
+      #This function is triggered at file deletion
+      if e.code != 'ENOENT'
+        throw e
+      return
+    if @textSent and contents.toString()
+      @callbackFunctions.contentsChanged? @currentBuffer, contents.toString().slice(0,-1)
+
+  metaChanged: =>
+    try
+      meta = fs.readFileSync "/tmp/shadowvim/#{@servername}/meta.txt"
+    catch e
+      #This function is triggered at file deletion
+      if e.code != 'ENOENT'
+        throw e
+      return
+    #Ignore changes that are caused by us setting up vim
+    if @textSent
+      @callbackFunctions.metaChanged? @currentBuffer, meta.toString()
+
+  messageReceived: =>
+    try
+      #TODO: Race condition
+      messages = fs.readFileSync("/tmp/shadowvim/#{@servername}/messages.txt").toString()
+    catch e
+      #This function is triggered at file deletion
+      if e.code != 'ENOENT'
+        throw e
+      return
+    if messages
+      fs.writeFileSync "/tmp/shadowvim/#{@servername}/messages.txt", ""
+      @callbackFunctions.messageReceived? messages.replace(/(.*\n)*/, '')
+      for message in messages.split("\n")
+        if message
+          console.log "message: " + message
+
+  buffer: ""
+
+  send: (message) =>
+    @buffer+=message
+    if @updateHot
+      return
+    console.log("send:"+@buffer)
+    @textSent = 1
+    @svProcess.stdin.write @buffer
+    @buffer = ""
+    if not @pollHot
+      @pollHot=1
+      setTimeout(=>
+        @pollHot=0
+        @sendPoll()
+      ,200)
 
   updateShadowvim: (textFunc, cursorFunc)=>
     @textSent = 0
@@ -87,62 +169,6 @@ class Shadowvim
          @updateIfCool(textFunc,cursorFunc)
        , 200)
 
-  contentsChanged: =>
-    try
-      contents = fs.readFileSync "/tmp/shadowvim/#{@servername}/contents.txt"
-    catch e
-      #This function is triggered at file deletion
-      if e.code != 'ENOENT'
-        throw e
-      return
-    if @textSent and contents.toString()
-      @callbackFunctions.contentsChanged? contents.toString().slice(0,-1)
-
-
-  metaChanged: =>
-    try
-      meta = fs.readFileSync "/tmp/shadowvim/#{@servername}/meta.txt"
-    catch e
-      #This function is triggered at file deletion
-      if e.code != 'ENOENT'
-        throw e
-      return
-    #Ignore changes that are caused by us setting up vim
-    if @textSent
-      @callbackFunctions.metaChanged? meta.toString()
-
-  messageReceived: =>
-    try
-      #TODO: Race condition
-      messages = fs.readFileSync("/tmp/shadowvim/#{@servername}/messages.txt").toString()
-    catch e
-      #This function is triggered at file deletion
-      if e.code != 'ENOENT'
-        throw e
-      return
-    if messages
-      fs.writeFileSync "/tmp/shadowvim/#{@servername}/messages.txt", ""
-      @callbackFunctions.messageReceived? messages.replace(/(.*\n)*/, '')
-      for message in messages.split("\n")
-        if message
-          console.log "message: " + message
-
-  buffer: ""
-
-  send: (message) =>
-    @buffer+=message
-    if @updateHot
-      return
-    @textSent = 1
-    @svProcess.stdin.write @buffer
-    @buffer = ""
-    if not @pollHot
-      @pollHot=1
-      setTimeout(=>
-        @pollHot=0
-        @sendPoll()
-      ,200)
-
   sendPoll: =>
       childProcess.spawn "vim", [
         "--servername", @servername
@@ -151,7 +177,7 @@ class Shadowvim
 
   exit: =>
     #TODO: Empty the directory first or we can't delete it.
-    fs.unlinkSync("/tmp/shadowvim/#{@servername}/contents.txt")
+    fs.unlinkSync("/tmp/shadowvim/#{@servername}/contents-#{@currentBuffer}.txt")
     fs.unlinkSync("/tmp/shadowvim/#{@servername}/meta.txt")
     fs.unlinkSync("/tmp/shadowvim/#{@servername}/messages.txt")
     fs.rmdirSync("/tmp/shadowvim/#{@servername}")

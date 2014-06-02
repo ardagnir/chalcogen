@@ -35,9 +35,50 @@ module.exports =
 class Chalcogen
   constructor: ->
     @statusView = new VimStatusView
-    @shadows = []
     atom.workspaceView.statusBar.prependLeft(@statusView)
-    atom.workspaceView.eachEditorView @setupEditorView
+    shadowvim = @setupShadowvim()
+    atom.workspaceView.eachEditorView (editorView)=>
+      #TODO: Need to restore this
+      editorView.showBufferConflictAlert = ->
+      editor = editorView.editor
+      editor.buffer.on "changed.shadowvim", =>
+        if @internalTextChange
+          if editor.savedMeta
+            @metaChanged(editor.vimBuffer, editor.savedMeta)
+        else
+          cursorRange = editor.getSelectedBufferRange()
+          #shadowvim.changeContents(editor.getText(), cursorRange)
+          shadowvim.updateShadowvim( ->
+            editor.getText()
+          , ->
+            editor.getSelectedBufferRange()
+          )
+
+      editorView.on "keypress.shadowvim", (e) ->
+        if editorView.hasClass('is-focused')
+          shadowvim.send String.fromCharCode(e.which)
+          false
+        else
+          true
+
+      editorView.on "keydown.shadowvim", (e) =>
+        if editorView.hasClass('is-focused')
+          translation=@translateCode(e.which, e.shiftKey)
+          if translation != ""
+            shadowvim.send translation
+            false
+        else
+          true
+
+      editorView.on "cursor:moved.shadowvim", =>
+        cursorRange = editor.getSelectedBufferRange()
+        if @savedRange
+            if not @waitingForContents and not cursorRange.isEqual(@savedRange)
+              shadowvim.updateShadowvim( ->
+                editor.getText()
+              , ->
+                editor.getSelectedBufferRange()
+              )
 
   cleanup: ->
     for editorView in atom.workspaceView.getEditorViews()
@@ -47,62 +88,22 @@ class Chalcogen
       editorView.off "keydown.shadowvim"
       editorView.off "cursor:moved.shadowvim"
 
-  setupEditorView: (editorView) =>
+  setupShadowvim: (editorView) =>
     uid = Math.floor(Math.random()*0x100000000).toString(16)
-    editor = editorView.getEditor()
-    #TODO: Need to restore this
-    editorView.showBufferConflictAlert = ->
+    editor = atom.workspace.getActiveEditor()
 
-    shadowvim = new Shadowvim 'chalcogen_'+uid, editor.getUri(),(=> editor.getText()), (=> editor.getSelectedBufferRange()),
-      contentsChanged: (data) => @setContents(editor, data)
-      metaChanged: (data) => @metaChanged(editor, data)
-      messageReceived: (data) => @messageReceived(editor, data)
-    editor.shadowvim = shadowvim
-    @shadows.push(shadowvim)
+    #TODO: don't prepick editor
+    shadowvim = new Shadowvim 'chalcogen_'+uid, editor?.getUri(),(=> editor?.getText()), (=> editor?.getSelectedBufferRange()),
+      contentsChanged: (vimBuffer, data) => @setContents(vimBuffer, data)
+      metaChanged: (vimBuffer, data) => @metaChanged(vimBuffer, data)
+      messageReceived: (data) => @messageReceived(data)
+      tabsChanged: (tabList, currentTab) => @tabsChangedInVim(tabList, currentTab)
 
     #If we die, our parent will lose a child. (There's probably a better way of doing this)
-    reaper = new MutationObserver @cleanupShadows
-    reaper.observe editorView.parent()[0],
-      childList: true
+   # reaper = new MutationObserver @cleanupShadows
+   # reaper.observe editorView.parent()[0],
+   #   childList: true
 
-    editor.buffer.on "changed.shadowvim", =>
-      if @internalTextChange
-        if @savedMeta
-          @metaChanged(editor, @savedMeta)
-      else
-        cursorRange = editor.getSelectedBufferRange()
-        #shadowvim.changeContents(editor.getText(), cursorRange)
-        shadowvim.updateShadowvim( ->
-          editor.getText()
-        , ->
-          editor.getSelectedBufferRange()
-        )
-
-    editorView.on "keypress.shadowvim", (e) ->
-      if editorView.hasClass('is-focused')
-        shadowvim.send String.fromCharCode(e.which)
-        false
-      else
-        true
-
-    editorView.on "keydown.shadowvim", (e) =>
-      if editorView.hasClass('is-focused')
-        translation=@translateCode(e.which, e.shiftKey)
-        if translation != ""
-          shadowvim.send translation
-          false
-      else
-        true
-
-    editorView.on "cursor:moved.shadowvim", =>
-      cursorRange = editor.getSelectedBufferRange()
-      if @savedRange
-          if not @waitingForContents and not cursorRange.isEqual(@savedRange)
-            shadowvim.updateShadowvim( ->
-              editor.getText()
-            , ->
-              editor.getSelectedBufferRange()
-            )
 
   cleanupShadows: (mutations) =>
     unusedShadows = @shadows.slice()
@@ -117,18 +118,52 @@ class Chalcogen
       if index != -1
         @shadows.splice(index, 1)
 
-  setContents: (editor,data) =>
+  setContents: (vimBuffer, data) =>
     @waitingForContents=0
     @internalTextChange=1
+    editor = @getEditorForVimBuffer(vimBuffer)
     editor.buffer.setTextViaDiff(data)
     @internalTextChange=0
 
-  messageReceived: (editor, data) =>
+  messageReceived: (data) =>
     @statusView.setText data
     @mode=''
 
-  metaChanged: (editor, data) =>
-    if data
+  tabsChangedInVim: (tabList, currentTab) =>
+    lastPane=null
+    needToDestroy=[]
+    unusedEditors=[]
+    #TODO: add support for multiple panes
+    pane = atom.workspace.getPanes()[0]
+    for editor in pane.getItems()
+       if editor?.buffer
+          unusedEditors.push editor
+
+    for vimTab,i in tabList.slice(1)
+       bufferNum = vimTab.replace(/:.*/, "")
+       tabpath = vimTab.replace(/[^:]*:/, "")
+       editor = pane.itemForUri(tabpath || undefined)
+       if editor
+         editor.vimBuffer = bufferNum
+         pane.moveItem(editor, i)
+         unusedEditors.splice(unusedEditors.indexOf(editor), 1)
+         if i+1 == currentTab
+           pane.activateItemForUri(tabpath || undefined)
+       else
+         #TODO: This could mess up ordering if it takes too long
+         atom.workspace.open(tabpath).then (editor) =>
+           editor.vimBuffer = bufferNum
+           pane.addItem(editor)
+           pane.moveItem(editor, i)
+           if i+1 == currentTab
+             pane.activateItemForUri(tabpath)
+
+     for editor in unusedEditors
+        pane.destroyItem(editor)
+
+  metaChanged: (vimBuffer, data) =>
+    editor = @getEditorForVimBuffer(vimBuffer)
+    if data and editor
       lines=data.split("\n")
       if lines.length>2
         if @mode!=lines[0] || @mode=='c'
@@ -139,14 +174,18 @@ class Chalcogen
         @savedRange = new Range([start[2], start[1]],[end[2],end[1]])
         if lines[1]==lines[2]
           editor.setCursorBufferPosition([start[2], start[1]])
-          @savedMeta=data
         else if end.length>2
           editor.setSelectedBufferRange([[start[2], start[1]],
                                          [end[2], end[1]]])
-        if @savedRange!=editor.getSelectedBufferRange()
+        if not @savedRange.isEqual(editor.getSelectedBufferRange())
           #We haven't got the text we want to put this cursor on yet
           @waitingForContents=1
-        @savedMeta=data
+        editor.savedMeta=data
+
+  getEditorForVimBuffer: (vimBuffer) ->
+    for editor in atom.workspace.getEditors()
+      if editor.vimBuffer == vimBuffer
+        return editor
 
   translateCode: (code, shift) ->
     if code>=8 && code<=10 || code==13 || code==27
