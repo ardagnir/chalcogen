@@ -38,9 +38,10 @@ class Chalcogen
     atom.workspaceView.statusBar.prependLeft(@statusView)
     shadowvim = @setupShadowvim()
     atom.workspaceView.eachEditorView (editorView)=>
-      #TODO: Need to restore this
-      editorView.showBufferConflictAlert = ->
       editor = editorView.editor
+      #TODO: Need to restore this
+      editorView.showBufferConflictAlert_chalc_backup = editorView.showBufferConflictAlert
+      editorView.showBufferConflictAlert = ->
       editor.buffer.on "changed.shadowvim", =>
         if @internalTextChange
           if editor.savedMeta
@@ -129,7 +130,7 @@ class Chalcogen
     @statusView.setText data
     @mode=''
 
-  tabsChangedInVim: (tabList, currentTab) =>
+  tabsChangedInVim: (tabList, currentTab, getContents) =>
     lastPane=null
     needToDestroy=[]
     unusedEditors=[]
@@ -155,11 +156,12 @@ class Chalcogen
            editor.vimBuffer = bufferNum
            pane.addItem(editor)
            pane.moveItem(editor, i)
+           editor.setText getContents(bufferNum)
            if i+1 == currentTab
              pane.activateItemForUri(tabpath)
 
      for editor in unusedEditors
-        pane.destroyItem(editor)
+        @destroyNoWarning(pane,editor)
 
   metaChanged: (vimBuffer, data) =>
     editor = @getEditorForVimBuffer(vimBuffer)
@@ -186,6 +188,13 @@ class Chalcogen
     for editor in atom.workspace.getEditors()
       if editor.vimBuffer == vimBuffer
         return editor
+
+  destroyNoWarning: (pane, editor) ->
+        storePromptFunc=pane.promptToSaveItem
+        pane.promptToSaveItem= ->
+          true
+        pane.destroyItem(editor)
+        pane.promptToSaveItem=storePromptFunc
 
   translateCode: (code, shift) ->
     if code>=8 && code<=10 || code==13 || code==27

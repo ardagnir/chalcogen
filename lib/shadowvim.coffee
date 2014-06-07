@@ -75,7 +75,7 @@ class Shadowvim
       if @contentsFile
         fs.close @contentsFile
         @contentsFile = null
-        fs.unlink("/tmp/shadowvim/#{@servername}/contents-#{@currentBuffer}.txt")
+        #fs.unlink("/tmp/shadowvim/#{@servername}/contents-#{@currentBuffer}.txt")
 
       currentInfo = tabs[0].split(" ")
       @currentBuffer = currentInfo[0]
@@ -85,7 +85,7 @@ class Shadowvim
         @contentsFile = id
         #needToRead=true
         fs.watch "/tmp/shadowvim/#{@servername}/contents-#{@currentBuffer}.txt", @contentsChanged
-      @callbackFunctions.tabsChanged? tabs, currentTab
+      @callbackFunctions.tabsChanged? tabs, currentTab, @getContents
 
   contentsChanged: =>
     try
@@ -97,6 +97,15 @@ class Shadowvim
       return
     if @textSent and contents.toString()
       @callbackFunctions.contentsChanged? @currentBuffer, contents.toString().slice(0,-1)
+
+  getContents:(buffer)=>
+    try
+      contents = fs.readFileSync "/tmp/shadowvim/#{@servername}/contents-#{buffer}.txt"
+    catch e
+      if e.code != 'ENOENT'
+        throw e
+      ""
+    contents.toString().slice(0,-1)
 
   metaChanged: =>
     try
