@@ -37,61 +37,64 @@ class Chalcogen
   constructor: ->
     @statusView = new VimStatusView
     atom.workspaceView.statusBar.prependLeft(@statusView)
-    pane = atom.workspace.getPanes()[0]
+    pane = atom.workspace.getActivePane()
     @shadowvim = @setupShadowvim(pane)
     pane.on "item-removed.chalcogen", => @changeTabs(pane)
     pane.on "item-moved.chalcogen", => @changeTabs(pane)
     pane.on "item-added.chalcogen", => @changeTabs(pane)
-    paneView=atom.workspaceView.getPaneViews()[0]
+    paneView=atom.workspaceView.getActivePaneView()
     paneView.on "pane:active-item-changed.chalcogen", => @changeTabs(pane)
 
-    atom.workspaceView.eachEditorView (editorView)=>
-      editor = editorView.editor
-      #TODO: Need to restore this
-      editorView.showBufferConflictAlert_chalc_backup = editorView.showBufferConflictAlert
-      editorView.showBufferConflictAlert = ->
-      editor.buffer.on "changed.chalcogen", =>
-        if @internalTextChange
-          if editor.savedMeta
-            @metaChanged(editor.vimBuffer, editor.savedMeta)
-        else
-          cursorRange = editor.getSelectedBufferRange()
-          #shadowvim.changeContents(editor.getText(), cursorRange)
-          @shadowvim.updateShadowvim( ->
-            editor.getText()
-          , ->
-            editor.getSelectedBufferRange()
-          )
+    @cancelEach = atom.workspaceView.eachEditorView(@eachEditor).off
 
-      editorView.on "keypress.chalcogen", (e) =>
-        if editorView.hasClass('is-focused')
-          @shadowvim.send String.fromCharCode(e.which)
-          false
-        else
-          true
-
-      editorView.on "keydown.chalcogen", (e) =>
-        if editorView.hasClass('is-focused')
-          translation=@translateCode(e.which, e.shiftKey)
-          if translation != ""
-            @shadowvim.send translation
-            false
-        else
-          true
-
-      editorView.on "cursor:moved.chalcogen", =>
+  eachEditor: (editorView) =>
+    editor = editorView.editor
+    #TODO: Need to restore this
+    editorView.showBufferConflictAlert_chalc_backup = editorView.showBufferConflictAlert
+    editorView.showBufferConflictAlert = ->
+    editor.buffer.on "changed.chalcogen", =>
+      if @internalTextChange
+        if editor.savedMeta
+          @metaChanged(editor.vimBuffer, editor.savedMeta)
+      else
         cursorRange = editor.getSelectedBufferRange()
-        if @savedRange
-            if not @waitingForContents and not cursorRange.isEqual(@savedRange)
-              @shadowvim.updateShadowvim( ->
-                editor.getText()
-              , ->
-                editor.getSelectedBufferRange()
-              )
+        #shadowvim.changeContents(editor.getText(), cursorRange)
+        @shadowvim.updateShadowvim( ->
+          editor.getText()
+        , ->
+          editor.getSelectedBufferRange()
+        )
+
+    editorView.on "keypress.chalcogen", (e) =>
+      if editorView.hasClass('is-focused')
+        @shadowvim.send String.fromCharCode(e.which)
+        false
+      else
+        true
+
+    editorView.on "keydown.chalcogen", (e) =>
+      if editorView.hasClass('is-focused')
+        translation=@translateCode(e.which, e.shiftKey)
+        if translation != ""
+          @shadowvim.send translation
+          false
+      else
+        true
+
+    editorView.on "cursor:moved.chalcogen", =>
+      cursorRange = editor.getSelectedBufferRange()
+      if @savedRange
+          if not @waitingForContents and not cursorRange.isEqual(@savedRange)
+            @shadowvim.updateShadowvim( ->
+              editor.getText()
+            , ->
+              editor.getSelectedBufferRange()
+            )
 
   cleanup: ->
+    @cancelEach()
     for editorView in atom.workspaceView.getEditorViews()
-      editorView.editor.shadowvim.exit()
+      editorView.showBufferConflictAlert = editorView.showBufferConflictAlert_chalc_backup
       editorView.editor.buffer.off 'changed.chalcogen'
       editorView.off "keypress.chalcogen"
       editorView.off "keydown.chalcogen"
@@ -100,6 +103,7 @@ class Chalcogen
       pane.off "item-removed.chalcogen"
       pane.off "item-moved.chalcogen"
       pane.off "item-added.chalcogen"
+    @shadowvim.exit()
 
   changeTabs: (pane)=>
     if @updatingTabsFromVim==0
@@ -123,11 +127,6 @@ class Chalcogen
       messageReceived: (data) => @messageReceived(data)
       tabsChanged: (tabList, currentTab) => @tabsChangedInVim(tabList, currentTab)
       onLoad: => @changeTabs(pane)
-
-    #If we die, our parent will lose a child. (There's probably a better way of doing this)
-   # reaper = new MutationObserver @cleanupShadows
-   # reaper.observe editorView.parent()[0],
-   #   childList: true
 
   cleanupShadows: (mutations) =>
     unusedShadows = @shadows.slice()
@@ -193,11 +192,13 @@ class Chalcogen
             pane.activateItem(editor)
         else
           closure = (buf, tab)=>
-            atom.workspace.open(tab).then (newEditor) =>
+            atom.project.open(tab).then (newEditor) =>
               newEditor.vimBuffer = buf
               pane.addItem(newEditor)
               if thisTabChange == @lastTabChange
-                newEditor.setText @shadowvim.getContents(buf)
+                contents = @shadowvim.getContents(buf)
+                if contents?
+                  newEditor.setText contents
                 if i+1 == currentTab
                   pane.activateItem(newEditor)
                 tabRecurs(i+1, length)

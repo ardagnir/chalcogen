@@ -24,6 +24,8 @@ class Shadowvim
   readWritePerm: parseInt("600", 8)
   allPerm: parseInt("777", 8)
 
+  maxBuffer:0
+
   constructor: (@servername, path, textFunc, cursorFunc, @callbackFunctions) ->
     env = process.env
     env["TERM"] = "xterm"
@@ -79,17 +81,20 @@ class Shadowvim
 
       currentInfo = tabs[0].split(" ")
       @currentBuffer = currentInfo[0]
+      if @currentBuffer>@maxBuffer
+        @maxBuffer = @currentBuffer
+      @contentsSynced = 0
       currentTab = parseInt(currentInfo[1])
       
       fs.open "/tmp/shadowvim/#{@servername}/contents-#{@currentBuffer}.txt", "w", @readWritePerm, (e, id) =>
         @contentsFile = id
-        #needToRead=true
         fs.watch "/tmp/shadowvim/#{@servername}/contents-#{@currentBuffer}.txt", @contentsChanged
       @callbackFunctions.tabsChanged? tabs, currentTab, @getContents
 
   contentsChanged: =>
     try
       contents = fs.readFileSync "/tmp/shadowvim/#{@servername}/contents-#{@currentBuffer}.txt"
+      @contentsSynced = 1
     catch e
       #This function is triggered at file deletion
       if e.code != 'ENOENT'
@@ -99,13 +104,14 @@ class Shadowvim
       @callbackFunctions.contentsChanged? @currentBuffer, contents.toString()
 
   getContents:(buffer)=>
-    try
-      contents = fs.readFileSync "/tmp/shadowvim/#{@servername}/contents-#{buffer}.txt"
-      contents.toString()
-    catch e
-      if e.code != 'ENOENT'
-        throw e
-      ""
+    if @contentsSynced
+      try
+        contents = fs.readFileSync "/tmp/shadowvim/#{@servername}/contents-#{buffer}.txt"
+        return contents.toString()
+      catch e
+        if e.code != 'ENOENT'
+          throw e
+    null
 
   metaChanged: =>
     try
@@ -195,9 +201,11 @@ class Shadowvim
       ]
 
   exit: =>
-    #TODO: Empty the directory first or we can't delete it.
-    fs.unlinkSync("/tmp/shadowvim/#{@servername}/contents-#{@currentBuffer}.txt")
+    @svProcess.kill('SIGKILL')
+    for i in [0..@maxBuffer]
+      try
+        fs.unlinkSync("/tmp/shadowvim/#{@servername}/contents-#{i}.txt")
+    fs.unlinkSync("/tmp/shadowvim/#{@servername}/tabs.txt")
     fs.unlinkSync("/tmp/shadowvim/#{@servername}/meta.txt")
     fs.unlinkSync("/tmp/shadowvim/#{@servername}/messages.txt")
     fs.rmdirSync("/tmp/shadowvim/#{@servername}")
-    @svProcess.kill('SIGKILL')
