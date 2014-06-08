@@ -25,7 +25,7 @@ module.exports =
     atom.workspaceView.command "chalcogen:toggle", =>
       if @chalcogen
         @chalcogen.cleanup()
-        @chalcogen = 0
+        @chalcogen = null
       else
         @chalcogen = new Chalcogen
 
@@ -33,49 +33,57 @@ module.exports =
     @chalcogen?.cleanup()
 
 class Chalcogen
+  updatingTabsFromVim: 0
   constructor: ->
     @statusView = new VimStatusView
     atom.workspaceView.statusBar.prependLeft(@statusView)
-    shadowvim = @setupShadowvim()
+    pane = atom.workspace.getPanes()[0]
+    @shadowvim = @setupShadowvim(pane)
+    pane.on "item-removed.chalcogen", => @changeTabs(pane)
+    pane.on "item-moved.chalcogen", => @changeTabs(pane)
+    pane.on "item-added.chalcogen", => @changeTabs(pane)
+    paneView=atom.workspaceView.getPaneViews()[0]
+    paneView.on "pane:active-item-changed.chalcogen", => @changeTabs(pane)
+
     atom.workspaceView.eachEditorView (editorView)=>
       editor = editorView.editor
       #TODO: Need to restore this
       editorView.showBufferConflictAlert_chalc_backup = editorView.showBufferConflictAlert
       editorView.showBufferConflictAlert = ->
-      editor.buffer.on "changed.shadowvim", =>
+      editor.buffer.on "changed.chalcogen", =>
         if @internalTextChange
           if editor.savedMeta
             @metaChanged(editor.vimBuffer, editor.savedMeta)
         else
           cursorRange = editor.getSelectedBufferRange()
           #shadowvim.changeContents(editor.getText(), cursorRange)
-          shadowvim.updateShadowvim( ->
+          @shadowvim.updateShadowvim( ->
             editor.getText()
           , ->
             editor.getSelectedBufferRange()
           )
 
-      editorView.on "keypress.shadowvim", (e) ->
+      editorView.on "keypress.chalcogen", (e) =>
         if editorView.hasClass('is-focused')
-          shadowvim.send String.fromCharCode(e.which)
+          @shadowvim.send String.fromCharCode(e.which)
           false
         else
           true
 
-      editorView.on "keydown.shadowvim", (e) =>
+      editorView.on "keydown.chalcogen", (e) =>
         if editorView.hasClass('is-focused')
           translation=@translateCode(e.which, e.shiftKey)
           if translation != ""
-            shadowvim.send translation
+            @shadowvim.send translation
             false
         else
           true
 
-      editorView.on "cursor:moved.shadowvim", =>
+      editorView.on "cursor:moved.chalcogen", =>
         cursorRange = editor.getSelectedBufferRange()
         if @savedRange
             if not @waitingForContents and not cursorRange.isEqual(@savedRange)
-              shadowvim.updateShadowvim( ->
+              @shadowvim.updateShadowvim( ->
                 editor.getText()
               , ->
                 editor.getSelectedBufferRange()
@@ -84,12 +92,27 @@ class Chalcogen
   cleanup: ->
     for editorView in atom.workspaceView.getEditorViews()
       editorView.editor.shadowvim.exit()
-      editorView.editor.buffer.off 'changed.shadowvim'
-      editorView.off "keypress.shadowvim"
-      editorView.off "keydown.shadowvim"
-      editorView.off "cursor:moved.shadowvim"
+      editorView.editor.buffer.off 'changed.chalcogen'
+      editorView.off "keypress.chalcogen"
+      editorView.off "keydown.chalcogen"
+      editorView.off "cursor:moved.chalcogen"
+    for pane in atom.workspace.getPanes()
+      pane.off "item-removed.chalcogen"
+      pane.off "item-moved.chalcogen"
+      pane.off "item-added.chalcogen"
 
-  setupShadowvim: (editorView) =>
+  changeTabs: (pane)=>
+    if @updatingTabsFromVim==0
+      @shadowvim.updateTabs(
+        pane.getItems().indexOf(pane.getActiveItem()),
+        for editor in pane.getItems()
+          if uri = editor.getUri()
+            "'"+uri+"'"
+          else
+            editor.vimBuffer || 0
+      )
+
+  setupShadowvim: (pane) =>
     uid = Math.floor(Math.random()*0x100000000).toString(16)
     editor = atom.workspace.getActiveEditor()
 
@@ -99,12 +122,12 @@ class Chalcogen
       metaChanged: (vimBuffer, data) => @metaChanged(vimBuffer, data)
       messageReceived: (data) => @messageReceived(data)
       tabsChanged: (tabList, currentTab) => @tabsChangedInVim(tabList, currentTab)
+      onLoad: => @changeTabs(pane)
 
     #If we die, our parent will lose a child. (There's probably a better way of doing this)
    # reaper = new MutationObserver @cleanupShadows
    # reaper.observe editorView.parent()[0],
    #   childList: true
-
 
   cleanupShadows: (mutations) =>
     unusedShadows = @shadows.slice()
@@ -130,7 +153,23 @@ class Chalcogen
     @statusView.setText data
     @mode=''
 
+  lastTabChange:0
+
   tabsChangedInVim: (tabList, currentTab, getContents) =>
+
+
+    #We only care about carying out the last tabchange. If we do multiple at the same time we break stuff.
+    @lastTabChange+=1
+    thisTabChange=@lastTabChange
+
+    if @updatingTabsFromVim
+      setTimeout(=>
+        if thisTabChange==@lastTabChange
+          @tabsChangedInVim(tabList,currentTab,getContents)
+      ,100)
+      return
+
+    @updatingTabsFromVim=1
     lastPane=null
     needToDestroy=[]
     unusedEditors=[]
@@ -140,28 +179,38 @@ class Chalcogen
        if editor?.buffer
           unusedEditors.push editor
 
-    for vimTab,i in tabList.slice(1)
-       bufferNum = vimTab.replace(/:.*/, "")
-       tabpath = vimTab.replace(/[^:]*:/, "")
-       editor = pane.itemForUri(tabpath || undefined)
-       if editor
-         editor.vimBuffer = bufferNum
-         pane.moveItem(editor, i)
-         unusedEditors.splice(unusedEditors.indexOf(editor), 1)
-         if i+1 == currentTab
-           pane.activateItemForUri(tabpath || undefined)
-       else
-         #TODO: This could mess up ordering if it takes too long
-         atom.workspace.open(tabpath).then (editor) =>
-           editor.vimBuffer = bufferNum
-           pane.addItem(editor)
-           pane.moveItem(editor, i)
-           editor.setText getContents(bufferNum)
-           if i+1 == currentTab
-             pane.activateItemForUri(tabpath)
-
-     for editor in unusedEditors
+    #Postpones finishing the loop until each step is completed so that all tabs are added in order.
+    tabRecurs = (start, length)=>
+      i = start
+      for vimTab in tabList.slice(start+1)
+        bufferNum = vimTab.replace(/:.*/, "")
+        tabpath = vimTab.replace(/[^:]*:/, "")
+        editor = @getEditorForVimBuffer(bufferNum, unusedEditors)
+        if editor
+          pane.moveItem(editor, i)
+          unusedEditors.splice(unusedEditors.indexOf(editor), 1)
+          if i+1 == currentTab
+            pane.activateItem(editor)
+        else
+          closure = (buf, tab)=>
+            atom.workspace.open(tab).then (newEditor) =>
+              newEditor.vimBuffer = buf
+              pane.addItem(newEditor)
+              if thisTabChange == @lastTabChange
+                newEditor.setText @shadowvim.getContents(buf)
+                if i+1 == currentTab
+                  pane.activateItem(newEditor)
+                tabRecurs(i+1, length)
+              else
+                @updatingTabsFromVim=0
+          closure(bufferNum, tabpath)
+          return
+        i+=1
+      for editor in unusedEditors
         @destroyNoWarning(pane,editor)
+      @updatingTabsFromVim=0
+
+    tabRecurs 0,tabList.length
 
   metaChanged: (vimBuffer, data) =>
     editor = @getEditorForVimBuffer(vimBuffer)
@@ -184,8 +233,9 @@ class Chalcogen
           @waitingForContents=1
         editor.savedMeta=data
 
-  getEditorForVimBuffer: (vimBuffer) ->
-    for editor in atom.workspace.getEditors()
+  getEditorForVimBuffer: (vimBuffer, editors) ->
+    editors ?= atom.workspace.getEditors()
+    for editor in editors
       if editor.vimBuffer == vimBuffer
         return editor
 

@@ -27,7 +27,7 @@ class Shadowvim
   constructor: (@servername, path, textFunc, cursorFunc, @callbackFunctions) ->
     env = process.env
     env["TERM"] = "xterm"
-    needToRead=false
+    loaded=false
     @svProcess = childProcess.spawn("vim", [
       "--servername", @servername
       "+call Shadowvim_SetupShadowvim('#{path || ""}','tabs')"
@@ -37,9 +37,9 @@ class Shadowvim
 
     #We know vim is loaded when we get stdout
     @svProcess.stdout.on 'data', (data) =>
-      if needToRead
-        @updateShadowvim(textFunc, cursorFunc)
-        needToRead = false
+      if not loaded
+        loaded=true
+        @callbackFunctions.onLoad()
 
     @svProcess.stderr.on 'data', (data) =>
       console.log("stderr:"+data)
@@ -96,16 +96,16 @@ class Shadowvim
         throw e
       return
     if @textSent and contents.toString()
-      @callbackFunctions.contentsChanged? @currentBuffer, contents.toString().slice(0,-1)
+      @callbackFunctions.contentsChanged? @currentBuffer, contents.toString()
 
   getContents:(buffer)=>
     try
       contents = fs.readFileSync "/tmp/shadowvim/#{@servername}/contents-#{buffer}.txt"
+      contents.toString()
     catch e
       if e.code != 'ENOENT'
         throw e
       ""
-    contents.toString().slice(0,-1)
 
   metaChanged: =>
     try
@@ -141,7 +141,6 @@ class Shadowvim
     @buffer+=message
     if @updateHot
       return
-    console.log("send:"+@buffer)
     @textSent = 1
     @svProcess.stdin.write @buffer
     @buffer = ""
@@ -151,6 +150,12 @@ class Shadowvim
         @pollHot=0
         @sendPoll()
       ,200)
+
+  updateTabs: (activeTab,pathList)=>
+      childProcess.spawn "vim", [
+        "--servername", @servername
+        "--remote-expr", "Shadowvim_UpdateTabs(#{activeTab+1}, [#{pathList.toString()}])"
+      ]
 
   updateShadowvim: (textFunc, cursorFunc)=>
     @textSent = 0
@@ -166,7 +171,12 @@ class Shadowvim
     if @updateHot<2
       @updateHot=0
       newText = textFunc()
-      cursorSelection = cursorFunc()
+      #If there's no selection, atom throws an exception
+      try
+        cursorSelection = cursorFunc()
+      catch
+        console.log("No selection!")
+        return
       fs.writeSync @contentsFile, newText, 0, newText.length, 0
       childProcess.spawn "vim", [
         "--servername", @servername
