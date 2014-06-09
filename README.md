@@ -27,13 +27,13 @@ The elements in column VI of the periodic table are called the chalcogens. If th
 Chalcogen runs an actual Vim instance in the background and routes keystrokes through Vim. Vim-mode instead attempts to re-implement Vim features.
 
 ##What works
-All the main vim modes should work, including ex commands.
-Mouse support works.
-Tabs are mostly working, and you should be able to add/remove tabs using vim commands or the atom-gui, but it's not perfect.
+- All the main vim modes should work, including ex commands.
+- Mouse support works.
+- Tabs are mostly working, and you should be able to add/remove tabs using vim commands or the atom-gui, but it's not perfect.
 
 ##What doesn't
-There's a lot of bugs. Chalcogen is unfinished and so is Atom.
-Splits aren't supported yet. Atom and Vim handle splits differently and it's going to take some work to implement vim-style splits in Atom.
+- There's a lot of bugs. Chalcogen is unfinished and so is Atom.
+- Splits aren't supported yet. Atom and Vim handle splits differently and it's going to take some work to implement vim-style splits in Atom.
 
 ##License
 AGPL v3
