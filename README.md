@@ -24,7 +24,7 @@ The elements in column VI of the periodic table are called the chalcogens. If th
 **Step 3:** Chalcogen is deactivated by default. Use Chalcogen:toggle or press Control-Alt-v to turn it on.
 
 ##How is this different than atom's vim-mode?
-Chalcogen runs an actual Vim instance in the background and routes keystrokes through Vim. Vim-mode just re-implements a bunch of Vim features.
+Chalcogen runs an actual Vim instance in the background and routes keystrokes through Vim. Vim-mode instead attempts to re-implement Vim features.
 
 ##What works
 All the main vim modes should work, including ex commands.
