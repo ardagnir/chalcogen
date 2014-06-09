@@ -13,10 +13,12 @@ The elements in column VI of the periodic table are called the chalcogens. If th
 
 ##Setup
 **Step 1:** If you don't have the [shadowvim](https://github.com/ardagnir/shadowvim) plugin, install it first using your plugin-manager. If you use pathogen:
+
     cd ~/.vim/bundle
     git clone http://github.com/ardagnir/shadowvim
 
 **Step 2:** Clone chalcogen to your Atom plugin directory
+
     mkdir ~/.atom/packages
     cd ~/.atom/packages
     git clone http://github.com/ardagnir/chalcogen
