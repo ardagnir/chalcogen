@@ -36,7 +36,7 @@ class Chalcogen
   updatingTabsFromVim: 0
   constructor: ->
     @statusView = new VimStatusView
-    atom.workspaceView.statusBar.prependLeft(@statusView)
+    atom.workspaceView.statusBar?.prependLeft(@statusView)
     pane = atom.workspace.getActivePane()
     @shadowvim = @setupShadowvim(pane)
     pane.on "item-removed.chalcogen", => @changeTabs(pane)
@@ -104,6 +104,7 @@ class Chalcogen
       pane.off "item-moved.chalcogen"
       pane.off "item-added.chalcogen"
     @shadowvim.exit()
+    @statusView.replaceWith ""
 
   changeTabs: (pane)=>
     if @updatingTabsFromVim==0
