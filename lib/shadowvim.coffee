@@ -29,7 +29,8 @@ class Shadowvim
   constructor: (@servername, path, textFunc, cursorFunc, @callbackFunctions) ->
     env = process.env
     env["TERM"] = "xterm"
-    loaded=false
+    @loaded=false
+    @tabDataSet=false
     @svProcess = childProcess.spawn("vim", [
       "--servername", @servername
       "+call Shadowvim_SetupShadowvim('#{path || ""}','tabs')"
@@ -39,8 +40,8 @@ class Shadowvim
 
     #We know vim is loaded when we get stdout
     @svProcess.stdout.on 'data', (data) =>
-      if not loaded
-        loaded=true
+      if not @loaded
+        @loaded=true
         @callbackFunctions.onLoad()
 
     @svProcess.stderr.on 'data', (data) =>
@@ -71,7 +72,6 @@ class Shadowvim
       if e.code != 'ENOENT'
         throw e
       return
-    console.log(tabs)
 
     if tabs.length
       if @contentsFile
@@ -157,23 +157,35 @@ class Shadowvim
         @sendPoll()
       ,200)
 
-  updateTabs: (activeTab,pathList)=>
-      childProcess.spawn "vim", [
-        "--servername", @servername
-        "--remote-expr", "Shadowvim_UpdateTabs(#{activeTab+1}, [#{pathList.toString()}])"
-      ]
-
-  updateShadowvim: (textFunc, cursorFunc)=>
+  updateTabs: (activeTab,pathList,fileChanges)=>
+        childProcess.spawn "vim", [
+          "--servername", @servername
+          "--remote-expr", "Shadowvim_UpdateTabs(#{activeTab+1}, [#{pathList.toString()}])"
+        ]
+#      if fileChanges
+#        build tab files
+#        childProcess.spawn "vim", [
+#          "--servername", @servername
+#          "--remote-expr", "Shadowvim_UpdateTabs(#{activeTab+1}, [#{pathList.toString()}],1)"
+#nuke files in shadowvim once done?
+#        ]
+#      else
+#        childProcess.spawn "vim", [
+#          "--servername", @servername
+#          "--remote-expr", "Shadowvim_UpdateTabs(#{activeTab+1}, [#{pathList.toString()}],0)"
+#        ]
+#
+  updateShadowvim: (textFunc, cursorFunc, preserveMode, buffer)=>
     @textSent = 0
     if not @updateHot
       setTimeout(=>
-        @updateIfCool(textFunc,cursorFunc)
+        @updateIfCool(textFunc,cursorFunc, preserveMode, buffer)
       , 200)
       @updateHot=1
     else
       @updateHot=2
 
-  updateIfCool: (textFunc, cursorFunc) =>
+  updateIfCool: (textFunc, cursorFunc, preserveMode, buffer) =>
     if @updateHot<2
       @updateHot=0
       newText = textFunc()
@@ -183,15 +195,16 @@ class Shadowvim
       catch
         console.log("No selection!")
         return
-      fs.writeSync @contentsFile, newText, 0, newText.length, 0
-      childProcess.spawn "vim", [
-        "--servername", @servername
-        "--remote-expr", "Shadowvim_UpdateText(#{cursorSelection.start.row+1},#{cursorSelection.start.column+1},#{cursorSelection.end.row+1},#{cursorSelection.end.column+1},0)"
-      ]
+      if buffer==@currentBuffer
+        fs.writeSync @contentsFile, newText, 0, newText.length, 0
+        childProcess.spawn "vim", [
+          "--servername", @servername
+          "--remote-expr", "Shadowvim_UpdateText(#{cursorSelection.start.row+1},#{cursorSelection.start.column+1},#{cursorSelection.end.row+1},#{cursorSelection.end.column+1},#{preserveMode})"
+        ]
     else
        @updateHot=1
        setTimeout(=>
-         @updateIfCool(textFunc,cursorFunc)
+         @updateIfCool(textFunc, cursorFunc, preserveMode, buffer)
        , 200)
 
   sendPoll: =>

@@ -57,12 +57,11 @@ class Chalcogen
         if editor.savedMeta
           @metaChanged(editor.vimBuffer, editor.savedMeta)
       else
-        cursorRange = editor.getSelectedBufferRange()
-        #shadowvim.changeContents(editor.getText(), cursorRange)
         @shadowvim.updateShadowvim( ->
           editor.getText()
         , ->
           editor.getSelectedBufferRange()
+        ,0,editor.vimBuffer
         )
 
     editorView.on "keypress.chalcogen", (e) =>
@@ -73,22 +72,27 @@ class Chalcogen
         true
 
     editorView.on "keydown.chalcogen", (e) =>
-      if editorView.hasClass('is-focused')
-        translation=@translateCode(e.which, e.shiftKey)
+      console.log(e.which)
+      if editorView.hasClass('is-focused') and not e.altKey
+        translation=@translateCode(e.which, e.shiftKey, e.ctrlKey)
         if translation != ""
+          console.log("worked fine")
           @shadowvim.send translation
           false
       else
         true
 
     editorView.on "cursor:moved.chalcogen", =>
+      console.log "cursor moved"
       cursorRange = editor.getSelectedBufferRange()
       if @savedRange
           if not @waitingForContents and not cursorRange.isEqual(@savedRange)
+            console.log "sending update"
             @shadowvim.updateShadowvim( ->
               editor.getText()
             , ->
               editor.getSelectedBufferRange()
+            ,0,editor.vimBuffer
             )
 
   cleanup: ->
@@ -108,6 +112,7 @@ class Chalcogen
 
   changeTabs: (pane)=>
     if @updatingTabsFromVim==0
+      pane = atom.workspace.getActivePane()
       @shadowvim.updateTabs(
         pane.getItems().indexOf(pane.getActiveItem()),
         for editor in pane.getItems()
@@ -116,6 +121,13 @@ class Chalcogen
           else
             editor.vimBuffer || 0
       )
+      editor = pane.getActiveItem()
+      @shadowvim.updateShadowvim( ->
+        editor.getText()
+      , ->
+        editor.getSelectedBufferRange()
+      ,1,editor.vimBuffer)
+    
 
   setupShadowvim: (pane) =>
     uid = Math.floor(Math.random()*0x100000000).toString(16)
@@ -248,8 +260,10 @@ class Chalcogen
         pane.destroyItem(editor)
         pane.promptToSaveItem=storePromptFunc
 
-  translateCode: (code, shift) ->
-    if code>=8 && code<=10 || code==13 || code==27
+  translateCode: (code, shift, control) ->
+    if control && code>=65 && code<=90
+      String.fromCharCode(code-64)
+    else if code>=8 && code<=10 || code==13 || code==27
       String.fromCharCode(code)
     else if code==37
       String.fromCharCode(27)+'[D'
