@@ -72,22 +72,18 @@ class Chalcogen
         true
 
     editorView.on "keydown.chalcogen", (e) =>
-      console.log(e.which)
       if editorView.hasClass('is-focused') and not e.altKey
         translation=@translateCode(e.which, e.shiftKey, e.ctrlKey)
         if translation != ""
-          console.log("worked fine")
           @shadowvim.send translation
           false
       else
         true
 
     editorView.on "cursor:moved.chalcogen", =>
-      console.log "cursor moved"
       cursorRange = editor.getSelectedBufferRange()
       if @savedRange
           if not @waitingForContents and not cursorRange.isEqual(@savedRange)
-            console.log "sending update"
             @shadowvim.updateShadowvim( ->
               editor.getText()
             , ->
@@ -110,7 +106,7 @@ class Chalcogen
     @shadowvim.exit()
     @statusView.replaceWith ""
 
-  changeTabs: (pane)=>
+  changeTabs: (pane, changeText)=>
     if @updatingTabsFromVim==0
       pane = atom.workspace.getActivePane()
       @shadowvim.updateTabs(
@@ -120,14 +116,19 @@ class Chalcogen
             "'"+uri+"'"
           else
             editor.vimBuffer || 0
+        ,
+        (if changeText then (editor.getText() for editor in pane.getItems()) else null)
       )
       editor = pane.getActiveItem()
-      @shadowvim.updateShadowvim( ->
-        editor.getText()
-      , ->
-        editor.getSelectedBufferRange()
-      ,1,editor.vimBuffer)
-    
+
+      if changeText
+        @shadowvim.updateShadowvim( ->
+         #We're making sure we're on the right pane, since we don't have a buffer num.
+         pane.getActiveItem().getText()
+        ,
+         #The cursor pos will get nuked before this is run, so evaluate the pos now.
+         ((x)-> (->x))(editor.getSelectedBufferRange())
+        ,0,"init")
 
   setupShadowvim: (pane) =>
     uid = Math.floor(Math.random()*0x100000000).toString(16)
@@ -139,7 +140,7 @@ class Chalcogen
       metaChanged: (vimBuffer, data) => @metaChanged(vimBuffer, data)
       messageReceived: (data) => @messageReceived(data)
       tabsChanged: (tabList, currentTab) => @tabsChangedInVim(tabList, currentTab)
-      onLoad: => @changeTabs(pane)
+      onLoad: => @changeTabs(pane, 1)
 
   cleanupShadows: (mutations) =>
     unusedShadows = @shadows.slice()

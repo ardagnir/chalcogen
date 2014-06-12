@@ -47,19 +47,18 @@ class Shadowvim
     @svProcess.stderr.on 'data', (data) =>
       console.log("stderr:"+data)
 
-
     #These might already exist
     try
       fs.mkdirSync "/tmp/shadowvim", @allPerm
     try
       fs.mkdirSync "/tmp/shadowvim/" + @servername, @execPerm
 
-    fs.open "/tmp/shadowvim/#{@servername}/meta.txt", "w", @readWritePerm, =>
+    #TODO: Grab all the filestrings from functions
+    fs.writeFile "/tmp/shadowvim/#{@servername}/meta.txt", "", {mode: @readWritePerm}, =>
       fs.watch "/tmp/shadowvim/#{@servername}/meta.txt", @metaChanged
-    fs.open "/tmp/shadowvim/#{@servername}/messages.txt", "w", @readWritePerm, =>
+    fs.writeFile "/tmp/shadowvim/#{@servername}/messages.txt", "", {mode: @readWritePerm}, =>
       fs.watch "/tmp/shadowvim/#{@servername}/messages.txt", @messageReceived
-    fs.open "/tmp/shadowvim/#{@servername}/tabs.txt", "w", @readWritePerm, (e, id) =>
-      @tabFile = id
+    fs.writeFile "/tmp/shadowvim/#{@servername}/tabs.txt", "", {mode: @readWritePerm}, =>
       fs.watch "/tmp/shadowvim/#{@servername}/tabs.txt", @tabsChanged
 
     return
@@ -74,27 +73,21 @@ class Shadowvim
       return
 
     if tabs.length
-      if @contentsFile
-        fs.close @contentsFile
-        @contentsFile = null
-        #fs.unlink("/tmp/shadowvim/#{@servername}/contents-#{@currentBuffer}.txt")
-
       currentInfo = tabs[0].split(" ")
       @currentBuffer = currentInfo[0]
       if @currentBuffer>@maxBuffer
         @maxBuffer = @currentBuffer
-      @contentsSynced = 0
       currentTab = parseInt(currentInfo[1])
       
-      fs.open "/tmp/shadowvim/#{@servername}/contents-#{@currentBuffer}.txt", "w", @readWritePerm, (e, id) =>
-        @contentsFile = id
-        fs.watch "/tmp/shadowvim/#{@servername}/contents-#{@currentBuffer}.txt", @contentsChanged
+      fs.appendFile "/tmp/shadowvim/#{@servername}/contents-#{@currentBuffer}.txt", "", {mode: @readWritePerm}, =>
+        if @oldCurrentBufferWatcher
+          @oldCurrentBufferWatcher.close()
+        @oldCurrentBufferWatcher=fs.watch "/tmp/shadowvim/#{@servername}/contents-#{@currentBuffer}.txt", @contentsChanged
       @callbackFunctions.tabsChanged? tabs, currentTab, @getContents
 
   contentsChanged: =>
     try
       contents = fs.readFileSync "/tmp/shadowvim/#{@servername}/contents-#{@currentBuffer}.txt"
-      @contentsSynced = 1
     catch e
       #This function is triggered at file deletion
       if e.code != 'ENOENT'
@@ -104,7 +97,6 @@ class Shadowvim
       @callbackFunctions.contentsChanged? @currentBuffer, contents.toString()
 
   getContents:(buffer)=>
-    if @contentsSynced
       try
         contents = fs.readFileSync "/tmp/shadowvim/#{@servername}/contents-#{buffer}.txt"
         return contents.toString()
@@ -158,23 +150,29 @@ class Shadowvim
       ,200)
 
   updateTabs: (activeTab,pathList,fileChanges)=>
-        childProcess.spawn "vim", [
-          "--servername", @servername
-          "--remote-expr", "Shadowvim_UpdateTabs(#{activeTab+1}, [#{pathList.toString()}])"
-        ]
-#      if fileChanges
-#        build tab files
-#        childProcess.spawn "vim", [
-#          "--servername", @servername
-#          "--remote-expr", "Shadowvim_UpdateTabs(#{activeTab+1}, [#{pathList.toString()}],1)"
-#nuke files in shadowvim once done?
-#        ]
-#      else
-#        childProcess.spawn "vim", [
-#          "--servername", @servername
-#          "--remote-expr", "Shadowvim_UpdateTabs(#{activeTab+1}, [#{pathList.toString()}],0)"
-#        ]
-#
+    #   childProcess.spawn "vim", [
+    #     "--servername", @servername
+    #     "--remote-expr", "Shadowvim_UpdateTabs(#{activeTab+1}, [#{pathList.toString()}])"
+    #   ]
+    if fileChanges
+      filesRemaining=fileChanges.length
+      for contents,i in fileChanges
+        writeTab= (cont, callback)=>
+            fs.writeFile "/tmp/shadowvim/#{@servername}/tabin-#{i}.txt", cont, =>
+              filesRemaining-=1
+              if filesRemaining==0
+                childProcess.spawn "vim", [
+                  "--servername", @servername
+                  "--remote-expr", "Shadowvim_UpdateTabs(#{activeTab+1}, [#{pathList.toString()}],1)"
+                ]
+                console.log "Shadowvim_UpdateTabs(#{activeTab+1}, [#{pathList.toString()}],1)"
+        writeTab contents
+    else
+      childProcess.spawn "vim", [
+        "--servername", @servername
+        "--remote-expr", "Shadowvim_UpdateTabs(#{activeTab+1}, [#{pathList.toString()}],0)"
+      ]
+
   updateShadowvim: (textFunc, cursorFunc, preserveMode, buffer)=>
     @textSent = 0
     if not @updateHot
@@ -195,8 +193,11 @@ class Shadowvim
       catch
         console.log("No selection!")
         return
-      if buffer==@currentBuffer
-        fs.writeSync @contentsFile, newText, 0, newText.length, 0
+      if buffer==@currentBuffer || buffer=="init"
+        if buffer=="init"
+          #TODO: This is a hack to force initial mouse pos to update correct. Find a cleaner way to do this.
+          @textSent=1
+        fs.writeFileSync "/tmp/shadowvim/#{@servername}/contents-#{@currentBuffer}.txt", newText
         childProcess.spawn "vim", [
           "--servername", @servername
           "--remote-expr", "Shadowvim_UpdateText(#{cursorSelection.start.row+1},#{cursorSelection.start.column+1},#{cursorSelection.end.row+1},#{cursorSelection.end.column+1},#{preserveMode})"
