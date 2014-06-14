@@ -12,10 +12,10 @@ The elements in column VI of the periodic table are called the chalcogens. If th
 - Chalcogen also works in OSX, but doing so requires XQuartz. *(This is a requirement of vim's +clientserver functionality.)*
 
 ##Setup
-**Step 1:** If you don't have the [shadowvim](https://github.com/ardagnir/shadowvim) plugin, install it first using your plugin-manager. If you use pathogen:
+**Step 1:** If you don't have the [vimbed](https://github.com/ardagnir/vimbed) plugin, install it first using your plugin-manager. If you use pathogen:
 
     cd ~/.vim/bundle
-    git clone http://github.com/ardagnir/shadowvim
+    git clone http://github.com/ardagnir/vimbed
 
 **Step 2:** Clone chalcogen to your Atom plugin directory
 
