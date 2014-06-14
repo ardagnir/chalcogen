@@ -17,7 +17,7 @@
 
 fs = require("fs")
 VimStatusView = require('./vim-status-view.coffee')
-Shadowvim = require('./shadowvim')
+Vimbed = require('./vimbed')
 {Range} = require('atom')
 
 module.exports =
@@ -38,7 +38,7 @@ class Chalcogen
     @statusView = new VimStatusView
     atom.workspaceView.statusBar?.prependLeft(@statusView)
     pane = atom.workspace.getActivePane()
-    @shadowvim = @setupShadowvim(pane)
+    @vimbed = @setupVimbed(pane)
     pane.on "item-removed.chalcogen", => @changeTabs(pane)
     pane.on "item-moved.chalcogen", => @changeTabs(pane)
     pane.on "item-added.chalcogen", => @changeTabs(pane)
@@ -57,7 +57,7 @@ class Chalcogen
         if editor.savedMeta
           @metaChanged(editor.vimBuffer, editor.savedMeta)
       else
-        @shadowvim.updateShadowvim( ->
+        @vimbed.updateVimbed( ->
           editor.getText()
         , ->
           editor.getSelectedBufferRange()
@@ -66,7 +66,7 @@ class Chalcogen
 
     editorView.on "keypress.chalcogen", (e) =>
       if editorView.hasClass('is-focused')
-        @shadowvim.send String.fromCharCode(e.which)
+        @vimbed.send String.fromCharCode(e.which)
         false
       else
         true
@@ -75,7 +75,7 @@ class Chalcogen
       if editorView.hasClass('is-focused') and not e.altKey
         translation=@translateCode(e.which, e.shiftKey, e.ctrlKey)
         if translation != ""
-          @shadowvim.send translation
+          @vimbed.send translation
           false
       else
         true
@@ -84,7 +84,7 @@ class Chalcogen
       cursorRange = editor.getSelectedBufferRange()
       if @savedRange
           if not @waitingForContents and not cursorRange.isEqual(@savedRange)
-            @shadowvim.updateShadowvim( ->
+            @vimbed.updateVimbed( ->
               editor.getText()
             , ->
               editor.getSelectedBufferRange()
@@ -103,13 +103,13 @@ class Chalcogen
       pane.off "item-removed.chalcogen"
       pane.off "item-moved.chalcogen"
       pane.off "item-added.chalcogen"
-    @shadowvim.exit()
+    @vimbed.exit()
     @statusView.replaceWith ""
 
   changeTabs: (pane, changeText)=>
     if @updatingTabsFromVim==0
       pane = atom.workspace.getActivePane()
-      @shadowvim.updateTabs(
+      @vimbed.updateTabs(
         pane.getItems().indexOf(pane.getActiveItem()),
         for editor in pane.getItems()
           if uri = editor.getUri()
@@ -122,7 +122,7 @@ class Chalcogen
       editor = pane.getActiveItem()
 
       if changeText
-        @shadowvim.updateShadowvim( ->
+        @vimbed.updateVimbed( ->
          #We're making sure we're on the right pane, since we don't have a buffer num.
          pane.getActiveItem().getText()
         ,
@@ -130,30 +130,17 @@ class Chalcogen
          ((x)-> (->x))(editor.getSelectedBufferRange())
         ,0,"init")
 
-  setupShadowvim: (pane) =>
+  setupVimbed: (pane) =>
     uid = Math.floor(Math.random()*0x100000000).toString(16)
     editor = atom.workspace.getActiveEditor()
 
     #TODO: don't prepick editor
-    shadowvim = new Shadowvim 'chalcogen_'+uid, editor?.getUri(),(=> editor?.getText()), (=> editor?.getSelectedBufferRange()),
+    vimbed = new Vimbed 'chalcogen_'+uid, editor?.getUri(),(=> editor?.getText()), (=> editor?.getSelectedBufferRange()),
       contentsChanged: (vimBuffer, data) => @setContents(vimBuffer, data)
       metaChanged: (vimBuffer, data) => @metaChanged(vimBuffer, data)
       messageReceived: (data) => @messageReceived(data)
       tabsChanged: (tabList, currentTab) => @tabsChangedInVim(tabList, currentTab)
       onLoad: => @changeTabs(pane, 1)
-
-  cleanupShadows: (mutations) =>
-    unusedShadows = @shadows.slice()
-    for currentEditor in atom.workspace.getEditors()
-      index = unusedShadows.indexOf(currentEditor.shadowvim)
-      if index != -1
-        unusedShadows.splice(index, 1)
-
-    for shadow in unusedShadows
-      shadow.exit()
-      index = @shadows.indexOf(shadow)
-      if index != -1
-        @shadows.splice(index, 1)
 
   setContents: (vimBuffer, data) =>
     @waitingForContents=0
@@ -210,7 +197,7 @@ class Chalcogen
               newEditor.vimBuffer = buf
               pane.addItem(newEditor)
               if thisTabChange == @lastTabChange
-                contents = @shadowvim.getContents(buf)
+                contents = @vimbed.getContents(buf)
                 if contents?
                   newEditor.setText contents
                 if i+1 == currentTab

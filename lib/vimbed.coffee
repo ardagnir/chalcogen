@@ -19,7 +19,7 @@ fs = require("fs")
 childProcess = require("child_process")
 
 module.exports =
-class Shadowvim
+class Vimbed
   execPerm: parseInt("700", 8)
   readWritePerm: parseInt("600", 8)
   allPerm: parseInt("777", 8)
@@ -31,41 +31,41 @@ class Shadowvim
     env["TERM"] = "xterm"
     @loaded=false
     @tabDataSet=false
-    @svProcess = childProcess.spawn("vim", [
+    @vProcess = childProcess.spawn("vim", [
       "--servername", @servername
-      "+call Shadowvim_SetupShadowvim('#{path || ""}','tabs')"
+      "+call Vimbed_SetupVimbed('#{path || ""}','tabs')"
     ], {
       env: env
     })
 
     #We know vim is loaded when we get stdout
-    @svProcess.stdout.on 'data', (data) =>
+    @vProcess.stdout.on 'data', (data) =>
       if not @loaded
         @loaded=true
         @callbackFunctions.onLoad()
 
-    @svProcess.stderr.on 'data', (data) =>
+    @vProcess.stderr.on 'data', (data) =>
       console.log("stderr:"+data)
 
     #These might already exist
     try
-      fs.mkdirSync "/tmp/shadowvim", @allPerm
+      fs.mkdirSync "/tmp/vimbed", @allPerm
     try
-      fs.mkdirSync "/tmp/shadowvim/" + @servername, @execPerm
+      fs.mkdirSync "/tmp/vimbed/" + @servername, @execPerm
 
     #TODO: Grab all the filestrings from functions
-    fs.writeFile "/tmp/shadowvim/#{@servername}/meta.txt", "", {mode: @readWritePerm}, =>
-      fs.watch "/tmp/shadowvim/#{@servername}/meta.txt", @metaChanged
-    fs.writeFile "/tmp/shadowvim/#{@servername}/messages.txt", "", {mode: @readWritePerm}, =>
-      fs.watch "/tmp/shadowvim/#{@servername}/messages.txt", @messageReceived
-    fs.writeFile "/tmp/shadowvim/#{@servername}/tabs.txt", "", {mode: @readWritePerm}, =>
-      fs.watch "/tmp/shadowvim/#{@servername}/tabs.txt", @tabsChanged
+    fs.writeFile "/tmp/vimbed/#{@servername}/meta.txt", "", {mode: @readWritePerm}, =>
+      fs.watch "/tmp/vimbed/#{@servername}/meta.txt", @metaChanged
+    fs.writeFile "/tmp/vimbed/#{@servername}/messages.txt", "", {mode: @readWritePerm}, =>
+      fs.watch "/tmp/vimbed/#{@servername}/messages.txt", @messageReceived
+    fs.writeFile "/tmp/vimbed/#{@servername}/tabs.txt", "", {mode: @readWritePerm}, =>
+      fs.watch "/tmp/vimbed/#{@servername}/tabs.txt", @tabsChanged
 
     return
 
   tabsChanged: =>
     try
-      tabs = fs.readFileSync("/tmp/shadowvim/#{@servername}/tabs.txt").toString().split("\n")
+      tabs = fs.readFileSync("/tmp/vimbed/#{@servername}/tabs.txt").toString().split("\n")
     catch e
       #This function is triggered at file deletion
       if e.code != 'ENOENT'
@@ -79,15 +79,15 @@ class Shadowvim
         @maxBuffer = @currentBuffer
       currentTab = parseInt(currentInfo[1])
       
-      fs.appendFile "/tmp/shadowvim/#{@servername}/contents-#{@currentBuffer}.txt", "", {mode: @readWritePerm}, =>
+      fs.appendFile "/tmp/vimbed/#{@servername}/contents-#{@currentBuffer}.txt", "", {mode: @readWritePerm}, =>
         if @oldCurrentBufferWatcher
           @oldCurrentBufferWatcher.close()
-        @oldCurrentBufferWatcher=fs.watch "/tmp/shadowvim/#{@servername}/contents-#{@currentBuffer}.txt", @contentsChanged
+        @oldCurrentBufferWatcher=fs.watch "/tmp/vimbed/#{@servername}/contents-#{@currentBuffer}.txt", @contentsChanged
       @callbackFunctions.tabsChanged? tabs, currentTab, @getContents
 
   contentsChanged: =>
     try
-      contents = fs.readFileSync "/tmp/shadowvim/#{@servername}/contents-#{@currentBuffer}.txt"
+      contents = fs.readFileSync "/tmp/vimbed/#{@servername}/contents-#{@currentBuffer}.txt"
     catch e
       #This function is triggered at file deletion
       if e.code != 'ENOENT'
@@ -98,7 +98,7 @@ class Shadowvim
 
   getContents:(buffer)=>
       try
-        contents = fs.readFileSync "/tmp/shadowvim/#{@servername}/contents-#{buffer}.txt"
+        contents = fs.readFileSync "/tmp/vimbed/#{@servername}/contents-#{buffer}.txt"
         return contents.toString()
       catch e
         if e.code != 'ENOENT'
@@ -107,7 +107,7 @@ class Shadowvim
 
   metaChanged: =>
     try
-      meta = fs.readFileSync "/tmp/shadowvim/#{@servername}/meta.txt"
+      meta = fs.readFileSync "/tmp/vimbed/#{@servername}/meta.txt"
     catch e
       #This function is triggered at file deletion
       if e.code != 'ENOENT'
@@ -120,14 +120,14 @@ class Shadowvim
   messageReceived: =>
     try
       #TODO: Race condition
-      messages = fs.readFileSync("/tmp/shadowvim/#{@servername}/messages.txt").toString()
+      messages = fs.readFileSync("/tmp/vimbed/#{@servername}/messages.txt").toString()
     catch e
       #This function is triggered at file deletion
       if e.code != 'ENOENT'
         throw e
       return
     if messages
-      fs.writeFileSync "/tmp/shadowvim/#{@servername}/messages.txt", ""
+      fs.writeFileSync "/tmp/vimbed/#{@servername}/messages.txt", ""
       @callbackFunctions.messageReceived? messages.replace(/(.*\n)*/, '')
       for message in messages.split("\n")
         if message
@@ -140,7 +140,7 @@ class Shadowvim
     if @updateHot
       return
     @textSent = 1
-    @svProcess.stdin.write @buffer
+    @vProcess.stdin.write @buffer
     @buffer = ""
     if not @pollHot
       @pollHot=1
@@ -152,28 +152,28 @@ class Shadowvim
   updateTabs: (activeTab,pathList,fileChanges)=>
     #   childProcess.spawn "vim", [
     #     "--servername", @servername
-    #     "--remote-expr", "Shadowvim_UpdateTabs(#{activeTab+1}, [#{pathList.toString()}])"
+    #     "--remote-expr", "Vimbed_UpdateTabs(#{activeTab+1}, [#{pathList.toString()}])"
     #   ]
     if fileChanges
       filesRemaining=fileChanges.length
       for contents,i in fileChanges
         writeTab= (cont, callback)=>
-            fs.writeFile "/tmp/shadowvim/#{@servername}/tabin-#{i}.txt", cont, =>
+            fs.writeFile "/tmp/vimbed/#{@servername}/tabin-#{i}.txt", cont, =>
               filesRemaining-=1
               if filesRemaining==0
                 childProcess.spawn "vim", [
                   "--servername", @servername
-                  "--remote-expr", "Shadowvim_UpdateTabs(#{activeTab+1}, [#{pathList.toString()}],1)"
+                  "--remote-expr", "Vimbed_UpdateTabs(#{activeTab+1}, [#{pathList.toString()}],1)"
                 ]
-                console.log "Shadowvim_UpdateTabs(#{activeTab+1}, [#{pathList.toString()}],1)"
+                console.log "Vimbed_UpdateTabs(#{activeTab+1}, [#{pathList.toString()}],1)"
         writeTab contents
     else
       childProcess.spawn "vim", [
         "--servername", @servername
-        "--remote-expr", "Shadowvim_UpdateTabs(#{activeTab+1}, [#{pathList.toString()}],0)"
+        "--remote-expr", "Vimbed_UpdateTabs(#{activeTab+1}, [#{pathList.toString()}],0)"
       ]
 
-  updateShadowvim: (textFunc, cursorFunc, preserveMode, buffer)=>
+  updateVimbed: (textFunc, cursorFunc, preserveMode, buffer)=>
     @textSent = 0
     if not @updateHot
       setTimeout(=>
@@ -197,10 +197,10 @@ class Shadowvim
         if buffer=="init"
           #TODO: This is a hack to force initial mouse pos to update correct. Find a cleaner way to do this.
           @textSent=1
-        fs.writeFileSync "/tmp/shadowvim/#{@servername}/contents-#{@currentBuffer}.txt", newText
+        fs.writeFileSync "/tmp/vimbed/#{@servername}/contents-#{@currentBuffer}.txt", newText
         childProcess.spawn "vim", [
           "--servername", @servername
-          "--remote-expr", "Shadowvim_UpdateText(#{cursorSelection.start.row+1},#{cursorSelection.start.column+1},#{cursorSelection.end.row+1},#{cursorSelection.end.column+1},#{preserveMode})"
+          "--remote-expr", "Vimbed_UpdateText(#{cursorSelection.start.row+1},#{cursorSelection.start.column+1},#{cursorSelection.end.row+1},#{cursorSelection.end.column+1},#{preserveMode})"
         ]
     else
        @updateHot=1
@@ -211,15 +211,15 @@ class Shadowvim
   sendPoll: =>
       childProcess.spawn "vim", [
         "--servername", @servername
-        "--remote-expr", "Shadowvim_Poll()"
+        "--remote-expr", "Vimbed_Poll()"
       ]
 
   exit: =>
-    @svProcess.kill('SIGKILL')
+    @vProcess.kill('SIGKILL')
     for i in [0..@maxBuffer]
       try
-        fs.unlinkSync("/tmp/shadowvim/#{@servername}/contents-#{i}.txt")
-    fs.unlinkSync("/tmp/shadowvim/#{@servername}/tabs.txt")
-    fs.unlinkSync("/tmp/shadowvim/#{@servername}/meta.txt")
-    fs.unlinkSync("/tmp/shadowvim/#{@servername}/messages.txt")
-    fs.rmdirSync("/tmp/shadowvim/#{@servername}")
+        fs.unlinkSync("/tmp/vimbed/#{@servername}/contents-#{i}.txt")
+    fs.unlinkSync("/tmp/vimbed/#{@servername}/tabs.txt")
+    fs.unlinkSync("/tmp/vimbed/#{@servername}/meta.txt")
+    fs.unlinkSync("/tmp/vimbed/#{@servername}/messages.txt")
+    fs.rmdirSync("/tmp/vimbed/#{@servername}")
