@@ -1,10 +1,9 @@
 Chalcogen
 ===========
 
-Full vim integration in atom.
-(Currently in proof-of-concept stage)
+Full vim integration in atom. Embeds an actual vim process using [vimbed](https://github.com/ardagnir/vimbed)
 
-The elements in column VI of the periodic table are called the chalcogens. If the atoms around you didn't include chalcogens, you'd die.
+*(Currently in proof-of-concept stage)*
 
 ##Requirements
 - Chalcogen requires Atom and Vim(your version needs to have +clientserver).
@@ -12,7 +11,7 @@ The elements in column VI of the periodic table are called the chalcogens. If th
 - Chalcogen also works in OSX, but doing so requires XQuartz. *(This is a requirement of vim's +clientserver functionality.)*
 
 ##Setup
-**Step 1:** If you don't have the [vimbed](https://github.com/ardagnir/vimbed) plugin, install it first using your plugin-manager. If you use pathogen:
+**Step 1:** If you don't have the vimbed plugin, install it first using your plugin-manager. If you use pathogen:
 
     cd ~/.vim/bundle
     git clone http://github.com/ardagnir/vimbed
