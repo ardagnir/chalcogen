@@ -1,7 +1,7 @@
 Chalcogen
 ===========
 
-Full vim integration in atom. Embeds an actual vim process using [vimbed](https://github.com/ardagnir/vimbed)
+Full Vim integration in Atom. Unlike vim-mode, Chalocgen embeds an actual Vim process using [vimbed](https://github.com/ardagnir/vimbed) to give you all of Vim's functionality.
 
 *(Currently in proof-of-concept stage)*
 
@@ -23,9 +23,6 @@ Full vim integration in atom. Embeds an actual vim process using [vimbed](https:
     git clone http://github.com/ardagnir/chalcogen
 
 **Step 3:** Chalcogen is deactivated by default. Use Chalcogen:toggle or press Control-Alt-v to turn it on.
-
-##How is this different than atom's vim-mode?
-Chalcogen runs an actual Vim instance in the background and routes keystrokes through Vim. Vim-mode instead attempts to re-implement Vim features.
 
 ##What works
 - All the main vim modes should work, including ex commands.
