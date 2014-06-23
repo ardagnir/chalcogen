@@ -109,26 +109,30 @@ class Chalcogen
   changeTabs: (pane, changeText)=>
     if @updatingTabsFromVim==0
       pane = atom.workspace.getActivePane()
-      @vimbed.updateTabs(
-        pane.getItems().indexOf(pane.getActiveItem()),
-        for editor in pane.getItems()
-          if uri = editor.getUri()
-            "'"+uri+"'"
-          else
-            editor.vimBuffer || 0
-        ,
-        (if changeText then (editor.getText() for editor in pane.getItems()) else null)
-      )
-      editor = pane.getActiveItem()
+      if not pane.getItems().length
+        atom.project.open().then (newEditor) =>
+          pane.addItem(newEditor)
+      else
+        @vimbed.updateTabs(
+          pane.getItems().indexOf(pane.getActiveItem()),
+          for editor in pane.getItems()
+            if uri = editor.getUri()
+              "'"+uri+"'"
+            else
+              editor.vimBuffer || 0
+          ,
+          (if changeText then (editor.getText() for editor in pane.getItems()) else null)
+        )
+        editor = pane.getActiveItem()
 
-      if changeText
-        @vimbed.updateVimbed( ->
-         #We're making sure we're on the right pane, since we don't have a buffer num.
-         pane.getActiveItem().getText()
-        ,
-         #The cursor pos will get nuked before this is run, so evaluate the pos now.
-         ((x)-> (->x))(editor.getSelectedBufferRange())
-        ,0,"init")
+        if changeText
+          @vimbed.updateVimbed( ->
+           #We're making sure we're on the right pane, since we don't have a buffer num.
+           pane.getActiveItem().getText()
+          ,
+           #The cursor pos will get nuked before this is run, so evaluate the pos now.
+           ((x)-> (->x))(editor.getSelectedBufferRange())
+          ,0,"init")
 
   setupVimbed: (pane) =>
     uid = Math.floor(Math.random()*0x100000000).toString(16)
@@ -156,8 +160,6 @@ class Chalcogen
   lastTabChange:0
 
   tabsChangedInVim: (tabList, currentTab, getContents) =>
-
-
     #We only care about carying out the last tabchange. If we do multiple at the same time we break stuff.
     @lastTabChange+=1
     thisTabChange=@lastTabChange
